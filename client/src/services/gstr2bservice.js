@@ -1,0 +1,31 @@
+import axiosInstance from "../utils/axiosInstance";
+
+export const uploadB2BSheet = (file, payload = {}) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (payload.companyId) {
+    formData.append("companyId", payload.companyId);
+  }
+  if (payload.companySnapshot) {
+    formData.append("companySnapshot", JSON.stringify(payload.companySnapshot));
+  }
+
+  return axiosInstance.post("/api/gstr2b-imports/b2b", formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+};
+
+export const processGstr2bImport = (id) =>
+  axiosInstance.post(`/api/gstr2b-imports/${id}/process`);
+
+export const fetchProcessedFile = (id) =>
+  axiosInstance.get(`/api/gstr2b-imports/${id}/processed`);
+
+export const fetchImportsByCompany = (companyId) =>
+  axiosInstance.get(`/api/gstr2b-imports/company/${companyId}`);
+
+export const fetchImportById = (id) =>
+  axiosInstance.get(`/api/gstr2b-imports/${id}`);
+

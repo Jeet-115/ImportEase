@@ -1,0 +1,17 @@
+{
+  "name": "tallyhelpersoftwareversion",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev:electron": "cd electron && npm start",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:client\" \"npm run dev:electron\"",
+    "build:electron": "cd electron && npm run build",
+    "dist": "cd client && npm run build && cd .. && npm run build:electron"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}
+
