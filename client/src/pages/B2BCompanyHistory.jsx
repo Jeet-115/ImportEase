@@ -1,11 +1,16 @@
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FiDownload,
   FiEye,
   FiFileText,
   FiInfo,
   FiLayers,
+  FiPlus,
+  FiRefreshCw,
+  FiEdit2,
+  FiX,
+  FiSave,
 } from "react-icons/fi";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import * as XLSX from "xlsx";
@@ -17,8 +22,21 @@ import {
   fetchImportsByCompany,
   fetchProcessedFile,
 } from "../services/gstr2bservice";
+import {
+  createLedgerName as createLedgerNameApi,
+  fetchLedgerNames,
+} from "../services/ledgernameservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
+import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
+
+const toDisplayValue = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return String(value);
+};
 
 const B2BCompanyHistory = () => {
   const { companyId } = useParams();
@@ -38,6 +56,18 @@ const B2BCompanyHistory = () => {
   });
   const [importCache, setImportCache] = useState({});
   const [processedCache, setProcessedCache] = useState({});
+  const [ledgerNames, setLedgerNames] = useState([]);
+  const [ledgerNamesLoading, setLedgerNamesLoading] = useState(false);
+  const [addLedgerModal, setAddLedgerModal] = useState({
+    open: false,
+    value: "",
+    submitting: false,
+  });
+  const [ledgerModal, setLedgerModal] = useState({
+    open: false,
+    processed: null,
+    importId: null,
+  });
 
   useEffect(() => {
     if (!company) {
@@ -68,6 +98,31 @@ const B2BCompanyHistory = () => {
     return () => clearTimeout(timer);
   }, [status]);
 
+  const loadLedgerNames = useCallback(async () => {
+    setLedgerNamesLoading(true);
+    try {
+      const { data } = await fetchLedgerNames();
+      setLedgerNames(data || []);
+    } catch (error) {
+      console.error("Failed to load ledger names:", error);
+      setStatus((prev) =>
+        prev.type === "error"
+          ? prev
+          : {
+              type: "error",
+              message:
+                "Unable to load ledger names. You can still type custom names.",
+            }
+      );
+    } finally {
+      setLedgerNamesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLedgerNames();
+  }, [loadLedgerNames]);
+
   const ensureImportDoc = async (importId) => {
     if (importCache[importId]) return importCache[importId];
     const { data } = await fetchImportById(importId);
@@ -92,6 +147,41 @@ const B2BCompanyHistory = () => {
       throw error;
     }
   };
+
+  const getProcessedRowKey = useCallback(
+    (row, index) => String(row?._id ?? row?.slNo ?? index),
+    []
+  );
+
+  const ledgerModalRows = useMemo(
+    () => ledgerModal.processed?.processedRows || [],
+    [ledgerModal.processed]
+  );
+  const ledgerOptionListId = "history-ledger-name-options";
+  const ledgerModalColumns = useMemo(
+    () => (ledgerModalRows[0] ? Object.keys(ledgerModalRows[0]) : []),
+    [ledgerModalRows]
+  );
+  const hasLedgerModalRows = ledgerModalRows.length > 0;
+  const {
+    ledgerInputs: modalLedgerInputs,
+    handleLedgerInputChange: modalHandleLedgerInputChange,
+    dirtyCount: modalDirtyCount,
+    persistLedgerChanges: persistLedgerChangesModal,
+    savingLedgerChanges: modalSavingLedgerChanges,
+  } = useLedgerNameEditing({
+    rows: ledgerModalRows,
+    importId: ledgerModal.importId,
+    getRowKey: getProcessedRowKey,
+    onUpdated: (updated) => {
+      if (!updated || !ledgerModal.importId) return;
+      setProcessedCache((prev) => ({
+        ...prev,
+        [ledgerModal.importId]: updated,
+      }));
+      setLedgerModal((prev) => ({ ...prev, processed: updated }));
+    },
+  });
 
   const downloadRawExcel = async (importId) => {
     try {
@@ -253,6 +343,93 @@ const B2BCompanyHistory = () => {
     }
   };
 
+  const openProcessedEditor = async (importId) => {
+    try {
+      const doc = await ensureProcessedDoc(importId);
+      if (!doc) return;
+      if (!doc.processedRows?.length) {
+        setStatus({
+          type: "error",
+          message: "No processed rows available.",
+        });
+        return;
+      }
+      setLedgerModal({
+        open: true,
+        processed: doc,
+        importId,
+      });
+    } catch (err) {
+      console.error("Failed to open ledger editor:", err);
+      setStatus({
+        type: "error",
+        message: "Unable to open ledger editor. Please try again.",
+      });
+    }
+  };
+
+  const closeLedgerModal = () =>
+    setLedgerModal({ open: false, processed: null, importId: null });
+
+  const handleLedgerModalSave = async () => {
+    try {
+      const updated = await persistLedgerChangesModal();
+      if (updated) {
+        setStatus({
+          type: "success",
+          message: "Ledger names updated for this processed file.",
+        });
+      } else {
+        setStatus({
+          type: "success",
+          message: "No ledger changes to save.",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to save ledger names:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to save ledger names. Please try again.",
+      });
+    }
+  };
+
+  const openAddLedgerModal = () =>
+    setAddLedgerModal({ open: true, value: "", submitting: false });
+
+  const closeAddLedgerModal = () =>
+    setAddLedgerModal({ open: false, value: "", submitting: false });
+
+  const handleAddLedgerSubmit = async (event) => {
+    event.preventDefault();
+    const trimmed = addLedgerModal.value.trim();
+    if (!trimmed) {
+      setStatus({
+        type: "error",
+        message: "Ledger name cannot be empty.",
+      });
+      return;
+    }
+    setAddLedgerModal((prev) => ({ ...prev, submitting: true }));
+    try {
+      await createLedgerNameApi({ name: trimmed });
+      setStatus({ type: "success", message: "Ledger name added." });
+      await loadLedgerNames();
+      setAddLedgerModal({ open: false, value: "", submitting: false });
+    } catch (error) {
+      console.error("Failed to add ledger name:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to add ledger name. Please try again.",
+      });
+      setAddLedgerModal((prev) => ({ ...prev, submitting: false }));
+    }
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-amber-800">
@@ -370,6 +547,12 @@ const B2BCompanyHistory = () => {
                             <FiDownload /> Processed
                           </button>
                           <button
+                            onClick={() => openProcessedEditor(imp._id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                          >
+                            <FiEdit2 /> Edit Ledgers
+                          </button>
+                          <button
                             onClick={() => downloadProcessedExcel(imp._id, true)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
@@ -406,6 +589,180 @@ const B2BCompanyHistory = () => {
           </div>
         </motion.section>
       </section>
+
+      {ledgerModal.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-6xl rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">
+            <header className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h3 className="text-2xl font-semibold text-slate-900">
+                  Edit ledger names
+                </h3>
+                <p className="text-sm text-slate-600">
+                  Updates are saved to the processed file and shared with everyone.
+                  Filling ledger names is optional.
+                </p>
+              </div>
+              <button
+                onClick={closeLedgerModal}
+                className="rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                aria-label="Close"
+              >
+                <FiX />
+              </button>
+            </header>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={loadLedgerNames}
+                disabled={ledgerNamesLoading}
+                className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <FiRefreshCw className={ledgerNamesLoading ? "animate-spin" : ""} />
+                {ledgerNamesLoading ? "Refreshing..." : "Refresh names"}
+              </button>
+              <button
+                type="button"
+                onClick={openAddLedgerModal}
+                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
+              >
+                <FiPlus />
+                New ledger name
+              </button>
+              <button
+                type="button"
+                onClick={handleLedgerModalSave}
+                disabled={!modalDirtyCount || modalSavingLedgerChanges}
+                className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {modalSavingLedgerChanges ? (
+                  <>
+                    <FiRefreshCw className="animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <FiSave />
+                    {modalDirtyCount
+                      ? `Save ${modalDirtyCount} change${
+                          modalDirtyCount > 1 ? "s" : ""
+                        }`
+                      : "Save ledger names"}
+                  </>
+                )}
+              </button>
+            </div>
+            <datalist id={ledgerOptionListId}>
+              {ledgerNames.map((ledger) => (
+                <option key={ledger._id} value={ledger.name} />
+              ))}
+            </datalist>
+            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh]">
+              {hasLedgerModalRows ? (
+                <table className="min-w-full text-xs text-slate-700">
+                  <thead className="sticky top-0 bg-white">
+                    <tr>
+                      {ledgerModalColumns.map((column) => (
+                        <th
+                          key={column}
+                          className="px-2 py-2 text-left font-semibold border-b border-amber-100"
+                        >
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ledgerModalRows.map((row, rowIdx) => {
+                      const rowKey = getProcessedRowKey(row, rowIdx);
+                      const ledgerValue = modalLedgerInputs[rowKey] ?? "";
+                      return (
+                        <tr
+                          key={rowKey}
+                          className="border-b border-amber-50 last:border-0"
+                        >
+                          {ledgerModalColumns.map((column) => (
+                            <td key={`${rowKey}-${column}`} className="px-2 py-2">
+                              {column === "Ledger Name" ? (
+                                <input
+                                  list={ledgerOptionListId}
+                                  value={ledgerValue}
+                                  onChange={(event) =>
+                                    modalHandleLedgerInputChange(
+                                      rowKey,
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Select or type ledger"
+                                  className="w-56 rounded-xl border border-amber-200 bg-white px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+                                />
+                              ) : (
+                                <span>{toDisplayValue(row?.[column])}</span>
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="p-6 text-center text-sm text-slate-500">
+                  No processed rows available.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {addLedgerModal.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Add ledger name
+              </h3>
+              <p className="text-sm text-slate-600">
+                Newly added names appear instantly in the dropdown list.
+              </p>
+            </div>
+            <form className="space-y-4" onSubmit={handleAddLedgerSubmit}>
+              <input
+                type="text"
+                value={addLedgerModal.value}
+                onChange={(event) =>
+                  setAddLedgerModal((prev) => ({
+                    ...prev,
+                    value: event.target.value,
+                  }))
+                }
+                className="w-full rounded-2xl border border-amber-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
+                placeholder="Enter ledger name"
+                autoFocus
+                disabled={addLedgerModal.submitting}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeAddLedgerModal}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  disabled={addLedgerModal.submitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addLedgerModal.submitting}
+                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                >
+                  {addLedgerModal.submitting ? "Adding..." : "Add ledger"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       <ExcelPreviewModal
         open={preview.open}

@@ -316,7 +316,6 @@ const LedgerNameManager = () => {
           </div>
         </motion.section>
       </section>
-      </section>
       <ConfirmDialog
         open={confirmState.open}
         title="Delete ledger name?"

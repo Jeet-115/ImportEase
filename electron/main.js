@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { getBaseDir, ensurePreferredDataDir, setBaseDir } from "./fileService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -17,9 +18,10 @@ const DEV_SERVER_URL =
 const BACKEND_PORT = process.env.BACKEND_PORT ?? "5000";
 const BACKEND_HEALTHCHECK = `http://localhost:${BACKEND_PORT}/health`;
 const BACKEND_BASE_URL = `http://localhost:${BACKEND_PORT}`;
+const DATA_DIR = getBaseDir(process.env.TALLY_HELPER_DATA_DIR);
 const PRODUCTION_RENDERER_CANDIDATES = [
   path.resolve(__dirname, "..", "client", "dist", "index.html"),
-  path.resolve(__dirname, "..", "renderer", "build", "index.html"),
+  path.resolve(__dirname, "renderer", "index.html"),
 ];
 
 let mainWindow = null;
@@ -214,13 +216,17 @@ const startBackend = () => {
 
   const backendEntry = path.resolve(__dirname, "..", "backend", "server.js");
   const backendCwd = path.dirname(backendEntry);
-  const nodeBinary = process.env.BACKEND_NODE ?? process.execPath;
+  const nodeBinary =
+    process.env.BACKEND_NODE ??
+    process.env.npm_node_execpath ??
+    process.execPath;
 
   backendProcess = spawn(nodeBinary, [backendEntry], {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: "1",
       PORT: BACKEND_PORT,
+      TALLY_HELPER_DATA_DIR: DATA_DIR,
     },
     cwd: backendCwd,
     stdio: "pipe",
@@ -300,13 +306,6 @@ const registerIpcHandlers = () => {
     return;
   }
 
-  const resolveStoragePath = (filename) => {
-    if (!filename || typeof filename !== "string") {
-      throw new Error("A filename string is required.");
-    }
-    return path.join(app.getPath("userData"), filename);
-  };
-
   ipcMain.handle("ping", () => "pong");
 
   ipcMain.handle("read-json", async (_, filename) => {
@@ -315,7 +314,7 @@ const registerIpcHandlers = () => {
         return null;
       }
 
-      const filePath = resolveStoragePath(filename);
+      const filePath = path.join(DATA_DIR, filename);
       if (!fs.existsSync(filePath)) {
         return null;
       }
@@ -341,7 +340,7 @@ const registerIpcHandlers = () => {
         throw new Error("A filename is required.");
       }
 
-      const filePath = resolveStoragePath(filename);
+      const filePath = path.join(DATA_DIR, filename);
       const directory = path.dirname(filePath);
       fs.mkdirSync(directory, { recursive: true });
 
@@ -411,6 +410,9 @@ const registerIpcHandlers = () => {
 };
 
 const bootstrap = async () => {
+  const dataDir = await ensurePreferredDataDir();
+  setBaseDir(dataDir);
+  process.env.TALLY_HELPER_DATA_DIR = dataDir;
   registerIpcHandlers();
   startBackend();
   try {

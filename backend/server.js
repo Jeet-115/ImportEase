@@ -37,10 +37,10 @@ app.use(
 app.use(express.json());
 
 // Routes
-// app.get("/health", (req, res) => {
-//   console.log("🩺 Health check at:", new Date().toLocaleString());
-//   res.status(200).send("OK");
-// });
+app.get("/health", (req, res) => {
+  console.log("🩺 Health check at:", new Date().toLocaleString());
+  res.status(200).send("OK");
+});
 
 app.use("/api/company-master", companyMasterRoutes);
 app.use("/api/gstin-numbers", gstinNumberRoutes);

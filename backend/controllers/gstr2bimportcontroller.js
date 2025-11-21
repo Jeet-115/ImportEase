@@ -7,6 +7,7 @@ import {
 } from "../models/gstr2bimportmodel.js";
 import {
   findById as findProcessedById,
+  updateLedgerNames as updateProcessedLedgerNamesById,
 } from "../models/processedfilemodel.js";
 import { processAndStoreDocument } from "../utils/gstr2bProcessor.js";
 
@@ -268,6 +269,55 @@ export const getImportById = async (req, res) => {
     return res
       .status(500)
       .json({ message: error.message || "Failed to fetch GSTR-2B import" });
+  }
+};
+
+export const updateProcessedLedgerNames = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) {
+      return res.status(400).json({ message: "rows payload is required." });
+    }
+
+    const sanitized = rows
+      .map((row) => ({
+        slNo:
+          row?.slNo !== undefined && row?.slNo !== null
+            ? Number(row.slNo)
+            : undefined,
+        index:
+          row?.index !== undefined && row?.index !== null
+            ? Number(row.index)
+            : undefined,
+        ledgerName:
+          typeof row?.ledgerName === "string" ? row.ledgerName : row?.ledgerName,
+      }))
+      .filter(
+        (row) =>
+          (row.slNo !== undefined && !Number.isNaN(row.slNo)) ||
+          (row.index !== undefined && !Number.isNaN(row.index))
+      );
+
+    if (!sanitized.length) {
+      return res
+        .status(400)
+        .json({ message: "rows payload is invalid or empty." });
+    }
+
+    const updated = await updateProcessedLedgerNamesById(id, sanitized);
+    if (!updated) {
+      return res.status(404).json({ message: "Processed file not found." });
+    }
+
+    return res
+      .status(200)
+      .json({ message: "Ledger names updated.", processed: updated });
+  } catch (error) {
+    console.error("updateProcessedLedgerNames Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to update ledger names.",
+    });
   }
 };
 

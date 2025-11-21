@@ -10,6 +10,7 @@ import {
   FiRefreshCw,
   FiUploadCloud,
   FiPlus,
+  FiSave,
 } from "react-icons/fi";
 import { fetchGSTINNumbers } from "../services/gstinnumberservices";
 import {
@@ -24,6 +25,7 @@ import {
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import BackButton from "../components/BackButton";
+import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
 
 const columnMap = {
   gstin: "gstin",
@@ -196,40 +198,42 @@ const CompanyProcessor = () => {
   const [downloadsUnlocked, setDownloadsUnlocked] = useState(false);
   const [ledgerNames, setLedgerNames] = useState([]);
   const [ledgerNamesLoading, setLedgerNamesLoading] = useState(false);
-  const [ledgerEdits, setLedgerEdits] = useState({});
   const [addLedgerModal, setAddLedgerModal] = useState({
     open: false,
     value: "",
     submitting: false,
   });
-  const processedRows = processedDoc?.processedRows || [];
+  const getRowKey = useCallback(
+    (row, index) => String(row?._id ?? row?.slNo ?? index),
+    []
+  );
+
+  const processedRows = useMemo(
+    () => processedDoc?.processedRows || [],
+    [processedDoc]
+  );
   const processedColumns = useMemo(
     () => (processedRows[0] ? Object.keys(processedRows[0]) : []),
     [processedRows]
   );
   const hasProcessedRows = processedRows.length > 0;
   const ledgerOptionListId = "ledger-name-options";
-
-  const getRowKey = useCallback(
-    (row, index) => String(row?._id ?? row?.slNo ?? index),
-    []
-  );
-
-  const initializeLedgerEdits = useCallback(
-    (rows = []) => {
-      setLedgerEdits(
-        rows.reduce((acc, row, idx) => {
-          const key = getRowKey(row, idx);
-          const value = row?.["Ledger Name"];
-          if (value) {
-            acc[key] = value;
-          }
-          return acc;
-        }, {})
-      );
+  const {
+    ledgerInputs,
+    handleLedgerInputChange,
+    dirtyCount: ledgerDirtyCount,
+    persistLedgerChanges,
+    savingLedgerChanges,
+  } = useLedgerNameEditing({
+    rows: processedRows,
+    importId,
+    getRowKey,
+    onUpdated: (updated) => {
+      if (updated) {
+        setProcessedDoc(updated);
+      }
     },
-    [getRowKey]
-  );
+  });
 
   const loadLedgerNames = useCallback(async () => {
     setLedgerNamesLoading(true);
@@ -255,41 +259,6 @@ const CompanyProcessor = () => {
   useEffect(() => {
     loadLedgerNames();
   }, [loadLedgerNames]);
-
-  const applyLedgerEdits = useCallback(
-    (rows = []) =>
-      rows.map((row, idx) => {
-        const key = getRowKey(row, idx);
-        if (!(key in ledgerEdits)) {
-          return row;
-        }
-        return { ...row, "Ledger Name": ledgerEdits[key] || "" };
-      }),
-    [getRowKey, ledgerEdits]
-  );
-
-  const handleLedgerInputChange = (rowKey, value) => {
-    setLedgerEdits((prev) => {
-      const next = { ...prev };
-      if (!value?.trim()) {
-        delete next[rowKey];
-      } else {
-        next[rowKey] = value;
-      }
-      return next;
-    });
-    setProcessedDoc((prev) => {
-      if (!prev?.processedRows) return prev;
-      const nextRows = prev.processedRows.map((row, idx) => {
-        const key = getRowKey(row, idx);
-        if (key !== rowKey) {
-          return row;
-        }
-        return { ...row, "Ledger Name": value };
-      });
-      return { ...prev, processedRows: nextRows };
-    });
-  };
 
   const openAddLedgerModal = () =>
     setAddLedgerModal({ open: true, value: "", submitting: false });
@@ -322,6 +291,31 @@ const CompanyProcessor = () => {
           "Unable to add ledger name. Please try again.",
       });
       setAddLedgerModal((prev) => ({ ...prev, submitting: false }));
+    }
+  };
+
+  const handleSaveLedgerNames = async () => {
+    try {
+      const updated = await persistLedgerChanges();
+      if (updated) {
+        setStatus({
+          type: "success",
+          message: "Ledger names saved to processed data.",
+        });
+      } else {
+        setStatus({
+          type: "success",
+          message: "No ledger changes to save.",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to save ledger names:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to save ledger names. Please try again.",
+      });
     }
   };
 
@@ -384,7 +378,6 @@ const CompanyProcessor = () => {
         setGeneratedRows([]);
         setImportId(data._id || null);
         setProcessedDoc(null);
-        setLedgerEdits({});
         setStatus({
           type: "success",
           message: `Imported ${data.rows?.length || 0} rows from B2B sheet.`,
@@ -591,7 +584,6 @@ const CompanyProcessor = () => {
     try {
       const { data } = await fetchProcessedFile(importId);
       setProcessedDoc(data);
-      initializeLedgerEdits(data?.processedRows || []);
       return data;
     } catch (error) {
       console.error("Failed to fetch processed file:", error);
@@ -618,29 +610,40 @@ const CompanyProcessor = () => {
 
   const handleDownloadProcessedExcel = async () => {
     if (!guardDownloads()) return;
-    const doc = await ensureProcessedDoc();
-    if (!doc) return;
+    try {
+      const savedDoc = await persistLedgerChanges();
+      const doc = savedDoc || (await ensureProcessedDoc());
+      if (!doc) return;
 
-    const matchedRows = doc.processedRows || [];
-    if (!matchedRows.length) {
+      const matchedRows = doc.processedRows || [];
+      if (!matchedRows.length) {
+        setStatus({
+          type: "error",
+          message: "No processed rows available. Process the sheet first.",
+        });
+        return;
+      }
+
+      const workbook = XLSX.utils.book_new();
+      const processedSheet = XLSX.utils.json_to_sheet(matchedRows);
+      XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
+      const filename = `${sanitizeFileName(
+        doc.company || company?.companyName || "company"
+      )}-tallymap.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Processed Tally Map Excel downloaded.",
+      });
+    } catch (error) {
+      console.error("Failed to download processed excel:", error);
       setStatus({
         type: "error",
-        message: "No processed rows available. Process the sheet first.",
+        message:
+          error?.response?.data?.message ||
+          "Unable to download processed data. Please try again.",
       });
-      return;
     }
-
-    const workbook = XLSX.utils.book_new();
-    const processedSheet = XLSX.utils.json_to_sheet(applyLedgerEdits(matchedRows));
-    XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
-    const filename = `${sanitizeFileName(
-      doc.company || company?.companyName || "company"
-    )}-tallymap.xlsx`;
-    XLSX.writeFile(workbook, filename);
-    setStatus({
-      type: "success",
-      message: "Processed Tally Map Excel downloaded.",
-    });
   };
 
   const handleDownloadMismatchedExcel = async () => {
@@ -707,7 +710,6 @@ const CompanyProcessor = () => {
     processGstr2bImport(importId)
       .then(({ data }) => {
         setProcessedDoc(data.processed || null);
-        initializeLedgerEdits(data.processed?.processedRows || []);
         setDownloadsUnlocked(true);
         setStatus({
           type: "success",
@@ -942,6 +944,28 @@ const CompanyProcessor = () => {
                   <FiPlus />
                   New ledger name
                 </button>
+                <button
+                  type="button"
+                  onClick={handleSaveLedgerNames}
+                  disabled={!ledgerDirtyCount || savingLedgerChanges}
+                  className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingLedgerChanges ? (
+                    <>
+                      <FiRefreshCw className="animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <FiSave />
+                      {ledgerDirtyCount
+                        ? `Save ${ledgerDirtyCount} change${
+                            ledgerDirtyCount > 1 ? "s" : ""
+                          }`
+                        : "Save ledger names"}
+                    </>
+                  )}
+                </button>
               </div>
             </div>
             {ledgerNames.length === 0 ? (
@@ -971,8 +995,7 @@ const CompanyProcessor = () => {
                 <tbody>
                   {processedRows.map((row, rowIdx) => {
                     const rowKey = getRowKey(row, rowIdx);
-                    const ledgerValue =
-                      ledgerEdits[rowKey] ?? row?.["Ledger Name"] ?? "";
+                    const ledgerValue = ledgerInputs[rowKey] ?? "";
                     return (
                       <tr
                         key={rowKey}

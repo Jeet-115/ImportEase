@@ -29,3 +29,6 @@ export const fetchImportsByCompany = (companyId) =>
 export const fetchImportById = (id) =>
   axiosInstance.get(`/api/gstr2b-imports/${id}`);
 
+export const updateProcessedLedgerNames = (id, payload) =>
+  axiosInstance.put(`/api/gstr2b-imports/${id}/processed/ledger-names`, payload);
+

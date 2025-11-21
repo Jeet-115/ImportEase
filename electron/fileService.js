@@ -4,7 +4,12 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const STORAGE_SUBDIR = "TallyHelperData";
+const DEFAULT_ROOT =
+  process.platform === "win32"
+    ? path.join("C:", STORAGE_SUBDIR)
+    : path.join(process.cwd(), "storage", "data");
 let cachedElectronApp = null;
+let cachedDataDir = process.env.TALLY_HELPER_DATA_DIR || null;
 
 const getElectronApp = () => {
   if (cachedElectronApp !== null) {
@@ -21,38 +26,43 @@ const getElectronApp = () => {
   return cachedElectronApp;
 };
 
-const getBaseDir = (customBasePath) => {
+export const setBaseDir = (dir) => {
+  if (dir) {
+    cachedDataDir = dir;
+    process.env.TALLY_HELPER_DATA_DIR = dir;
+  }
+};
+
+export const ensurePreferredDataDir = async () => {
+  if (cachedDataDir) {
+    await fs.mkdir(cachedDataDir, { recursive: true });
+    return cachedDataDir;
+  }
+
+  const preferred =
+    process.env.TALLY_HELPER_DATA_DIR ||
+    (process.platform === "win32" ? DEFAULT_ROOT : DEFAULT_ROOT);
+
+  await fs.mkdir(preferred, { recursive: true });
+  setBaseDir(preferred);
+  return preferred;
+};
+
+export const getBaseDir = (customBasePath) => {
   if (customBasePath) {
     return customBasePath;
   }
 
-  const electronApp = getElectronApp();
-  if (electronApp?.getPath) {
-    return path.join(electronApp.getPath("userData"), STORAGE_SUBDIR);
+  if (cachedDataDir) {
+    return cachedDataDir;
   }
 
-  const platform = process.platform;
-  const home = process.env.HOME || process.env.USERPROFILE || ".";
-
-  if (process.env.APPDATA) {
-    return path.join(process.env.APPDATA, "TallyHelper", STORAGE_SUBDIR);
+  if (process.env.TALLY_HELPER_DATA_DIR) {
+    cachedDataDir = process.env.TALLY_HELPER_DATA_DIR;
+    return cachedDataDir;
   }
 
-  if (platform === "darwin") {
-    return path.join(
-      home,
-      "Library",
-      "Application Support",
-      "TallyHelper",
-      STORAGE_SUBDIR,
-    );
-  }
-
-  if (platform === "linux") {
-    return path.join(home, ".config", "TallyHelper", STORAGE_SUBDIR);
-  }
-
-  return path.join(home, "TallyHelper", STORAGE_SUBDIR);
+  return DEFAULT_ROOT;
 };
 
 export const getFullPath = (filename, basePath) => {
