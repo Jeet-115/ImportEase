@@ -4,8 +4,10 @@ import cors from "cors";
 import companyMasterRoutes from "./routes/companymasterroutes.js";
 import gstinNumberRoutes from "./routes/gstinnumberroutes.js";
 import gstr2BImportRoutes from "./routes/gstr2bimportroutes.js";
+import ledgerNameRoutes from "./routes/ledgernameroutes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
+import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
 
 dotenv.config();
 const app = express();
@@ -35,14 +37,15 @@ app.use(
 app.use(express.json());
 
 // Routes
-app.get("/health", (req, res) => {
-  console.log("🩺 Health check at:", new Date().toLocaleString());
-  res.status(200).send("OK");
-});
+// app.get("/health", (req, res) => {
+//   console.log("🩺 Health check at:", new Date().toLocaleString());
+//   res.status(200).send("OK");
+// });
 
 app.use("/api/company-master", companyMasterRoutes);
 app.use("/api/gstin-numbers", gstinNumberRoutes);
 app.use("/api/gstr2b-imports", gstr2BImportRoutes);
+app.use("/api/ledger-names", ledgerNameRoutes);
 
 // Root route
 app.get("/", (req, res) => {
@@ -52,6 +55,7 @@ app.get("/", (req, res) => {
 const bootstrap = async () => {
   await initFileStore();
   await ensureGSTINSeeded();
+  await ensureLedgerNamesSeeded();
 
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -14,6 +14,7 @@ const DATA_DIR =
 const COLLECTIONS = {
   invoices: { filename: "invoices.json", defaultValue: [] },
   settings: { filename: "settings.json", defaultValue: {} },
+  ledgerNames: { filename: "ledgerNames.json", defaultValue: [] },
   companyMasters: { filename: "companyMasters.json", defaultValue: [] },
   gstinNumbers: { filename: "gstinNumbers.json", defaultValue: [] },
   gstr2bImports: { filename: "gstr2bImports.json", defaultValue: [] },

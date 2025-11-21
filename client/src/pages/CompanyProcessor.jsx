@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import {
@@ -9,6 +9,7 @@ import {
   FiPlayCircle,
   FiRefreshCw,
   FiUploadCloud,
+  FiPlus,
 } from "react-icons/fi";
 import { fetchGSTINNumbers } from "../services/gstinnumberservices";
 import {
@@ -16,6 +17,10 @@ import {
   processGstr2bImport,
   fetchProcessedFile,
 } from "../services/gstr2bservice";
+import {
+  createLedgerName as createLedgerNameApi,
+  fetchLedgerNames,
+} from "../services/ledgernameservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import BackButton from "../components/BackButton";
@@ -66,16 +71,13 @@ const outputColumns = [
   "Supplier State",
   "Supplier Amount",
   "Supplier Dr/Cr",
-  "Ledger Name 5%",
+  "Ledger Name",
   "Ledger Amount 5%",
   "Ledger amount cr/dr 5%",
-  "Ledger Name 12%",
   "Ledger Amount 12%",
   "Ledger amount Cr/Dr 12%",
-  "Ledger Name 18%",
   "Ledger Amount 18%",
   "Ledger amount cr/dr 18%",
-  "Ledger Name 28%",
   "Ledger Amount 28%",
   "Ledger amount cr/dr 28%",
   "IGST Rate 5%",
@@ -99,7 +101,6 @@ const outputColumns = [
 
 const ledgerKeyMap = {
   "5%": {
-    ledgerName: "Ledger Name 5%",
     ledgerAmount: "Ledger Amount 5%",
     ledgerCrDr: "Ledger amount cr/dr 5%",
     igst: "IGST Rate 5%",
@@ -107,7 +108,6 @@ const ledgerKeyMap = {
     sgst: "SGST/UTGST Rate 5%",
   },
   "12%": {
-    ledgerName: "Ledger Name 12%",
     ledgerAmount: "Ledger Amount 12%",
     ledgerCrDr: "Ledger amount Cr/Dr 12%",
     igst: "IGST Rate 12%",
@@ -115,7 +115,6 @@ const ledgerKeyMap = {
     sgst: "SGST/UTGST Rate 12%",
   },
   "18%": {
-    ledgerName: "Ledger Name 18%",
     ledgerAmount: "Ledger Amount 18%",
     ledgerCrDr: "Ledger amount cr/dr 18%",
     igst: "IGST Rate 18%",
@@ -123,7 +122,6 @@ const ledgerKeyMap = {
     sgst: "SGST/UTGST Rate 18%",
   },
   "28%": {
-    ledgerName: "Ledger Name 28%",
     ledgerAmount: "Ledger Amount 28%",
     ledgerCrDr: "Ledger amount cr/dr 28%",
     igst: "IGST Rate 28%",
@@ -172,6 +170,14 @@ const formatDate = (value) => {
     : date.toISOString().split("T")[0];
 };
 
+const toDisplayValue = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return String(value);
+};
+
 const CompanyProcessor = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -188,6 +194,136 @@ const CompanyProcessor = () => {
   const [processing, setProcessing] = useState(false);
   const [processedDoc, setProcessedDoc] = useState(null);
   const [downloadsUnlocked, setDownloadsUnlocked] = useState(false);
+  const [ledgerNames, setLedgerNames] = useState([]);
+  const [ledgerNamesLoading, setLedgerNamesLoading] = useState(false);
+  const [ledgerEdits, setLedgerEdits] = useState({});
+  const [addLedgerModal, setAddLedgerModal] = useState({
+    open: false,
+    value: "",
+    submitting: false,
+  });
+  const processedRows = processedDoc?.processedRows || [];
+  const processedColumns = useMemo(
+    () => (processedRows[0] ? Object.keys(processedRows[0]) : []),
+    [processedRows]
+  );
+  const hasProcessedRows = processedRows.length > 0;
+  const ledgerOptionListId = "ledger-name-options";
+
+  const getRowKey = useCallback(
+    (row, index) => String(row?._id ?? row?.slNo ?? index),
+    []
+  );
+
+  const initializeLedgerEdits = useCallback(
+    (rows = []) => {
+      setLedgerEdits(
+        rows.reduce((acc, row, idx) => {
+          const key = getRowKey(row, idx);
+          const value = row?.["Ledger Name"];
+          if (value) {
+            acc[key] = value;
+          }
+          return acc;
+        }, {})
+      );
+    },
+    [getRowKey]
+  );
+
+  const loadLedgerNames = useCallback(async () => {
+    setLedgerNamesLoading(true);
+    try {
+      const { data } = await fetchLedgerNames();
+      setLedgerNames(data || []);
+    } catch (error) {
+      console.error("Failed to load ledger names:", error);
+      setStatus((prev) =>
+        prev.type === "error"
+          ? prev
+          : {
+              type: "error",
+              message:
+                "Unable to load ledger names. You can still type custom names.",
+            }
+      );
+    } finally {
+      setLedgerNamesLoading(false);
+    }
+  }, [setStatus]);
+
+  useEffect(() => {
+    loadLedgerNames();
+  }, [loadLedgerNames]);
+
+  const applyLedgerEdits = useCallback(
+    (rows = []) =>
+      rows.map((row, idx) => {
+        const key = getRowKey(row, idx);
+        if (!(key in ledgerEdits)) {
+          return row;
+        }
+        return { ...row, "Ledger Name": ledgerEdits[key] || "" };
+      }),
+    [getRowKey, ledgerEdits]
+  );
+
+  const handleLedgerInputChange = (rowKey, value) => {
+    setLedgerEdits((prev) => {
+      const next = { ...prev };
+      if (!value?.trim()) {
+        delete next[rowKey];
+      } else {
+        next[rowKey] = value;
+      }
+      return next;
+    });
+    setProcessedDoc((prev) => {
+      if (!prev?.processedRows) return prev;
+      const nextRows = prev.processedRows.map((row, idx) => {
+        const key = getRowKey(row, idx);
+        if (key !== rowKey) {
+          return row;
+        }
+        return { ...row, "Ledger Name": value };
+      });
+      return { ...prev, processedRows: nextRows };
+    });
+  };
+
+  const openAddLedgerModal = () =>
+    setAddLedgerModal({ open: true, value: "", submitting: false });
+
+  const closeAddLedgerModal = () =>
+    setAddLedgerModal({ open: false, value: "", submitting: false });
+
+  const handleAddLedgerSubmit = async (event) => {
+    event.preventDefault();
+    const trimmed = addLedgerModal.value.trim();
+    if (!trimmed) {
+      setStatus({
+        type: "error",
+        message: "Ledger name cannot be empty.",
+      });
+      return;
+    }
+    setAddLedgerModal((prev) => ({ ...prev, submitting: true }));
+    try {
+      await createLedgerNameApi({ name: trimmed });
+      setStatus({ type: "success", message: "Ledger name added." });
+      await loadLedgerNames();
+      setAddLedgerModal({ open: false, value: "", submitting: false });
+    } catch (error) {
+      console.error("Failed to add ledger name:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to add ledger name. Please try again.",
+      });
+      setAddLedgerModal((prev) => ({ ...prev, submitting: false }));
+    }
+  };
 
   useEffect(() => {
     if (!company) return;
@@ -248,6 +384,7 @@ const CompanyProcessor = () => {
         setGeneratedRows([]);
         setImportId(data._id || null);
         setProcessedDoc(null);
+        setLedgerEdits({});
         setStatus({
           type: "success",
           message: `Imported ${data.rows?.length || 0} rows from B2B sheet.`,
@@ -320,16 +457,13 @@ const CompanyProcessor = () => {
       "Supplier State": supplierState,
       "Supplier Amount": invoiceValue || taxableValue,
       "Supplier Dr/Cr": "CR",
-      "Ledger Name 5%": "",
+    "Ledger Name": "",
       "Ledger Amount 5%": "",
       "Ledger amount cr/dr 5%": "",
-      "Ledger Name 12%": "",
       "Ledger Amount 12%": "",
       "Ledger amount Cr/Dr 12%": "",
-      "Ledger Name 18%": "",
       "Ledger Amount 18%": "",
       "Ledger amount cr/dr 18%": "",
-      "Ledger Name 28%": "",
       "Ledger Amount 28%": "",
       "Ledger amount cr/dr 28%": "",
       "IGST Rate 5%": "",
@@ -354,7 +488,6 @@ const CompanyProcessor = () => {
     if (slab) {
       const mapping = ledgerKeyMap[slab.slab];
       if (mapping) {
-        base[mapping.ledgerName] = `Purchase ${slab.slab}`;
         base[mapping.ledgerAmount] = taxableValue;
         base[mapping.ledgerCrDr] = "DR";
 
@@ -458,6 +591,7 @@ const CompanyProcessor = () => {
     try {
       const { data } = await fetchProcessedFile(importId);
       setProcessedDoc(data);
+      initializeLedgerEdits(data?.processedRows || []);
       return data;
     } catch (error) {
       console.error("Failed to fetch processed file:", error);
@@ -497,7 +631,7 @@ const CompanyProcessor = () => {
     }
 
     const workbook = XLSX.utils.book_new();
-    const processedSheet = XLSX.utils.json_to_sheet(matchedRows);
+    const processedSheet = XLSX.utils.json_to_sheet(applyLedgerEdits(matchedRows));
     XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
     const filename = `${sanitizeFileName(
       doc.company || company?.companyName || "company"
@@ -526,25 +660,21 @@ const CompanyProcessor = () => {
     const workbook = XLSX.utils.book_new();
     const sanitizedRows = mismatchedRows.map(
       ({
-        "Ledger Name 5%": _ln5,
         "Ledger Amount 5%": _la5,
         "Ledger DR/CR 5%": _ldr5,
         "IGST Rate 5%": _ir5,
         "CGST Rate 5%": _cr5,
         "SGST/UTGST Rate 5%": _sr5,
-        "Ledger Name 12%": _ln12,
         "Ledger Amount 12%": _la12,
         "Ledger DR/CR 12%": _ldr12,
         "IGST Rate 12%": _ir12,
         "CGST Rate 12%": _cr12,
         "SGST/UTGST Rate 12%": _sr12,
-        "Ledger Name 18%": _ln18,
         "Ledger Amount 18%": _la18,
         "Ledger DR/CR 18%": _ldr18,
         "IGST Rate 18%": _ir18,
         "CGST Rate 18%": _cr18,
         "SGST/UTGST Rate 18%": _sr18,
-        "Ledger Name 28%": _ln28,
         "Ledger Amount 28%": _la28,
         "Ledger DR/CR 28%": _ldr28,
         "IGST Rate 28%": _ir28,
@@ -577,6 +707,7 @@ const CompanyProcessor = () => {
     processGstr2bImport(importId)
       .then(({ data }) => {
         setProcessedDoc(data.processed || null);
+        initializeLedgerEdits(data.processed?.processedRows || []);
         setDownloadsUnlocked(true);
         setStatus({
           type: "success",
@@ -774,7 +905,161 @@ const CompanyProcessor = () => {
             ) : null}
           </motion.section>
         ) : null}
+
+        {hasProcessedRows ? (
+          <motion.section
+            className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h3 className="text-xl font-semibold text-slate-900">
+                  Review processed rows
+                </h3>
+                <p className="text-sm text-slate-600">
+                  Click the Ledger Name column to pick from saved ledgers or type to
+                  search. Filling these is optional and only affects your download.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={loadLedgerNames}
+                  disabled={ledgerNamesLoading}
+                  className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <FiRefreshCw
+                    className={ledgerNamesLoading ? "animate-spin" : ""}
+                  />
+                  {ledgerNamesLoading ? "Refreshing..." : "Refresh names"}
+                </button>
+                <button
+                  type="button"
+                  onClick={openAddLedgerModal}
+                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
+                >
+                  <FiPlus />
+                  New ledger name
+                </button>
+              </div>
+            </div>
+            {ledgerNames.length === 0 ? (
+              <p className="text-xs text-rose-500">
+                No saved ledger names yet. Add one to reuse it in every row.
+              </p>
+            ) : null}
+            <datalist id={ledgerOptionListId}>
+              {ledgerNames.map((ledger) => (
+                <option key={ledger._id} value={ledger.name} />
+              ))}
+            </datalist>
+            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh]">
+              <table className="min-w-full text-xs text-slate-700">
+                <thead className="sticky top-0 bg-white">
+                  <tr>
+                    {processedColumns.map((column) => (
+                      <th
+                        key={column}
+                        className="px-2 py-2 text-left font-semibold border-b border-amber-100"
+                      >
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {processedRows.map((row, rowIdx) => {
+                    const rowKey = getRowKey(row, rowIdx);
+                    const ledgerValue =
+                      ledgerEdits[rowKey] ?? row?.["Ledger Name"] ?? "";
+                    return (
+                      <tr
+                        key={rowKey}
+                        className="border-b border-amber-50 last:border-0"
+                      >
+                        {processedColumns.map((column) => {
+                          const cellKey = `${rowKey}-${column}`;
+                          return (
+                            <td
+                              key={cellKey}
+                              className="px-2 py-2 align-top text-[11px]"
+                            >
+                              {column === "Ledger Name" ? (
+                                <input
+                                  list={ledgerOptionListId}
+                                  value={ledgerValue}
+                                  onChange={(event) =>
+                                    handleLedgerInputChange(
+                                      rowKey,
+                                      event.target.value
+                                    )
+                                  }
+                                  placeholder="Select or type ledger"
+                                  className="w-56 rounded-xl border border-amber-200 bg-white px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+                                />
+                              ) : (
+                                <span>{toDisplayValue(row?.[column])}</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </motion.section>
+        ) : null}
       </section>
+      {addLedgerModal.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Add ledger name
+              </h3>
+              <p className="text-sm text-slate-600">
+                Newly added names appear instantly in the dropdown list.
+              </p>
+            </div>
+            <form className="space-y-4" onSubmit={handleAddLedgerSubmit}>
+              <input
+                type="text"
+                value={addLedgerModal.value}
+                onChange={(event) =>
+                  setAddLedgerModal((prev) => ({
+                    ...prev,
+                    value: event.target.value,
+                  }))
+                }
+                className="w-full rounded-2xl border border-amber-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
+                placeholder="Enter ledger name"
+                autoFocus
+                disabled={addLedgerModal.submitting}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeAddLedgerModal}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  disabled={addLedgerModal.submitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addLedgerModal.submitting}
+                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                >
+                  {addLedgerModal.submitting ? "Adding..." : "Add ledger"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </motion.main>
   );
 };

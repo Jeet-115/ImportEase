@@ -13,7 +13,6 @@ const SLAB_CONFIG = [
 
 const LEDGER_KEYS = {
   "5%": {
-    ledgerName: "Ledger Name 5%",
     ledgerAmount: "Ledger Amount 5%",
     ledgerCrDr: "Ledger DR/CR 5%",
     igst: "IGST Rate 5%",
@@ -21,7 +20,6 @@ const LEDGER_KEYS = {
     sgst: "SGST/UTGST Rate 5%",
   },
   "12%": {
-    ledgerName: "Ledger Name 12%",
     ledgerAmount: "Ledger Amount 12%",
     ledgerCrDr: "Ledger DR/CR 12%",
     igst: "IGST Rate 12%",
@@ -29,7 +27,6 @@ const LEDGER_KEYS = {
     sgst: "SGST/UTGST Rate 12%",
   },
   "18%": {
-    ledgerName: "Ledger Name 18%",
     ledgerAmount: "Ledger Amount 18%",
     ledgerCrDr: "Ledger DR/CR 18%",
     igst: "IGST Rate 18%",
@@ -37,7 +34,6 @@ const LEDGER_KEYS = {
     sgst: "SGST/UTGST Rate 18%",
   },
   "28%": {
-    ledgerName: "Ledger Name 28%",
     ledgerAmount: "Ledger Amount 28%",
     ledgerCrDr: "Ledger DR/CR 28%",
     igst: "IGST Rate 28%",
@@ -46,14 +42,7 @@ const LEDGER_KEYS = {
   },
 };
 
-const CUSTOM_LEDGER_KEYS = {
-  ledgerName: "Ledger Name Custom",
-  ledgerAmount: "Ledger Amount Custom",
-  ledgerCrDr: "Ledger DR/CR Custom",
-  igst: "IGST Rate Custom",
-  cgst: "CGST Rate Custom",
-  sgst: "SGST/UTGST Rate Custom",
-};
+const LEDGER_NAME_COLUMN = "Ledger Name";
 
 let cachedStateMap = null;
 
@@ -99,19 +88,12 @@ const initializeLedgerFields = () => {
   const fields = {};
   Object.keys(LEDGER_KEYS).forEach((slab) => {
     const keys = LEDGER_KEYS[slab];
-    fields[keys.ledgerName] = null;
     fields[keys.ledgerAmount] = null;
     fields[keys.ledgerCrDr] = null;
     fields[keys.igst] = null;
     fields[keys.cgst] = null;
     fields[keys.sgst] = null;
   });
-  fields[CUSTOM_LEDGER_KEYS.ledgerName] = null;
-  fields[CUSTOM_LEDGER_KEYS.ledgerAmount] = null;
-  fields[CUSTOM_LEDGER_KEYS.ledgerCrDr] = null;
-  fields[CUSTOM_LEDGER_KEYS.igst] = null;
-  fields[CUSTOM_LEDGER_KEYS.cgst] = null;
-  fields[CUSTOM_LEDGER_KEYS.sgst] = null;
   return fields;
 };
 
@@ -160,6 +142,7 @@ const processRowWithMap = (row, index, gstStateMap) => {
     supplierState: row?.placeOfSupply || null,
     supplierAmount: null,
     supplierDrCr: "CR",
+    [LEDGER_NAME_COLUMN]: null,
     ...initializeLedgerFields(),
     groAmount: null,
     roundOffDr: null,
@@ -178,7 +161,6 @@ const processRowWithMap = (row, index, gstStateMap) => {
 
   if (slab && ledgerAmount) {
     const keys = LEDGER_KEYS[slab.slab];
-    base[keys.ledgerName] = `Purchase ${slab.slab}`;
     base[keys.ledgerAmount] = ledgerAmount;
     base[keys.ledgerCrDr] = "DR";
 
@@ -194,12 +176,6 @@ const processRowWithMap = (row, index, gstStateMap) => {
   } else {
     ledgerAmount = invoiceValue || taxableValue;
     isMismatched = true;
-    base[CUSTOM_LEDGER_KEYS.ledgerName] = "Custom Purchase";
-    base[CUSTOM_LEDGER_KEYS.ledgerAmount] = ledgerAmount;
-    base[CUSTOM_LEDGER_KEYS.ledgerCrDr] = "DR";
-    base[CUSTOM_LEDGER_KEYS.igst] = igstApplied || null;
-    base[CUSTOM_LEDGER_KEYS.cgst] = cgstApplied || null;
-    base[CUSTOM_LEDGER_KEYS.sgst] = sgstApplied || null;
   }
 
   const groAmount = parseFloat(

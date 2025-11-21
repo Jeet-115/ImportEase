@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import {
+  FiBook,
   FiClipboard,
   FiCornerDownRight,
   FiLayers,
@@ -34,7 +35,7 @@ const Home = () => {
           company record in-sync. Built with clear instructions so even
           non-technical teammates feel confident.
         </p>
-        <div className="grid gap-4 sm:grid-cols-3 text-left">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-left">
           {[
             {
               icon: <FiSettings />,
@@ -53,6 +54,12 @@ const Home = () => {
               title: "Review History",
               text: "Download past imports or mismatched rows.",
               action: () => navigate("/b2b-history"),
+            },
+            {
+              icon: <FiBook />,
+              title: "Ledger Names",
+              text: "Curate purchase ledger titles for mapping.",
+              action: () => navigate("/ledger-names"),
             },
           ].map(({ icon, title, text, action }) => (
             <button
