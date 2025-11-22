@@ -5,6 +5,7 @@ import {
   FiCornerDownRight,
   FiLayers,
   FiSettings,
+  FiUsers,
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 
@@ -35,7 +36,7 @@ const Home = () => {
           company record in-sync. Built with clear instructions so even
           non-technical teammates feel confident.
         </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-left">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-left">
           {[
             {
               icon: <FiSettings />,
@@ -60,6 +61,12 @@ const Home = () => {
               title: "Ledger Names",
               text: "Curate purchase ledger titles for mapping.",
               action: () => navigate("/ledger-names"),
+            },
+            {
+              icon: <FiUsers />,
+              title: "Manage Party Masters",
+              text: "Upload purchase registers and manage party details.",
+              action: () => navigate("/party-masters"),
             },
           ].map(({ icon, title, text, action }) => (
             <button

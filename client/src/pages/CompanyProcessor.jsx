@@ -22,9 +22,11 @@ import {
   createLedgerName as createLedgerNameApi,
   fetchLedgerNames,
 } from "../services/ledgernameservice";
+import { fetchPartyMasters } from "../services/partymasterservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import BackButton from "../components/BackButton";
+import LedgerNameDropdown from "../components/LedgerNameDropdown";
 import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
 
 const columnMap = {
@@ -203,6 +205,9 @@ const CompanyProcessor = () => {
     value: "",
     submitting: false,
   });
+  const [partyMasters, setPartyMasters] = useState([]);
+  const [partyMastersLoading, setPartyMastersLoading] = useState(false);
+  const [missingSuppliers, setMissingSuppliers] = useState([]);
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
@@ -217,7 +222,6 @@ const CompanyProcessor = () => {
     [processedRows]
   );
   const hasProcessedRows = processedRows.length > 0;
-  const ledgerOptionListId = "ledger-name-options";
   const {
     ledgerInputs,
     handleLedgerInputChange,
@@ -259,6 +263,57 @@ const CompanyProcessor = () => {
   useEffect(() => {
     loadLedgerNames();
   }, [loadLedgerNames]);
+
+  const loadPartyMasters = useCallback(async () => {
+    if (!company?._id) return;
+    setPartyMastersLoading(true);
+    try {
+      const { data } = await fetchPartyMasters(company._id);
+      setPartyMasters(data || []);
+    } catch (error) {
+      console.error("Failed to load party masters:", error);
+    } finally {
+      setPartyMastersLoading(false);
+    }
+  }, [company]);
+
+  useEffect(() => {
+    if (hasProcessedRows && company?._id) {
+      loadPartyMasters();
+    }
+  }, [hasProcessedRows, company, loadPartyMasters]);
+
+  // Compare GSTINs and find missing suppliers
+  useEffect(() => {
+    if (!hasProcessedRows || !partyMasters.length) {
+      setMissingSuppliers([]);
+      return;
+    }
+
+    // Create a set of GSTINs from party masters (normalized to uppercase)
+    const partyMasterGstinSet = new Set(
+      partyMasters.map((party) => party.gstin?.trim().toUpperCase() || "")
+    );
+
+    // Extract unique suppliers from processed rows
+    const supplierMap = new Map();
+    processedRows.forEach((row) => {
+      const gstin = String(row["GSTIN/UIN"] || "").trim().toUpperCase();
+      const supplierName = String(row["Supplier Name"] || "").trim();
+      
+      if (gstin && supplierName && !partyMasterGstinSet.has(gstin)) {
+        // Use GSTIN as key to avoid duplicates
+        if (!supplierMap.has(gstin)) {
+          supplierMap.set(gstin, {
+            supplierName,
+            gstin: row["GSTIN/UIN"] || "", // Keep original case for display
+          });
+        }
+      }
+    });
+
+    setMissingSuppliers(Array.from(supplierMap.values()));
+  }, [processedRows, partyMasters, hasProcessedRows]);
 
   const openAddLedgerModal = () =>
     setAddLedgerModal({ open: true, value: "", submitting: false });
@@ -914,6 +969,36 @@ const CompanyProcessor = () => {
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
+            {missingSuppliers.length > 0 ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <FiAlertCircle className="text-amber-600 mt-0.5 flex-shrink-0" size={18} />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-amber-900 mb-1">
+                      Missing from Party Master
+                    </h4>
+                    <p className="text-xs text-amber-700 mb-3">
+                      The following suppliers with their GSTIN numbers are not present in the party master for this company:
+                    </p>
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      {missingSuppliers.map((supplier, idx) => (
+                        <div
+                          key={`${supplier.gstin}-${idx}`}
+                          className="flex items-center gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs"
+                        >
+                          <span className="font-medium text-slate-900 min-w-[200px]">
+                            {supplier.supplierName}
+                          </span>
+                          <span className="text-slate-600 font-mono">
+                            {supplier.gstin}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <h3 className="text-xl font-semibold text-slate-900">
@@ -973,11 +1058,6 @@ const CompanyProcessor = () => {
                 No saved ledger names yet. Add one to reuse it in every row.
               </p>
             ) : null}
-            <datalist id={ledgerOptionListId}>
-              {ledgerNames.map((ledger) => (
-                <option key={ledger._id} value={ledger.name} />
-              ))}
-            </datalist>
             <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh]">
               <table className="min-w-full text-xs text-slate-700">
                 <thead className="sticky top-0 bg-white">
@@ -1009,17 +1089,31 @@ const CompanyProcessor = () => {
                               className="px-2 py-2 align-top text-[11px]"
                             >
                               {column === "Ledger Name" ? (
-                                <input
-                                  list={ledgerOptionListId}
+                                <LedgerNameDropdown
                                   value={ledgerValue}
-                                  onChange={(event) =>
-                                    handleLedgerInputChange(
-                                      rowKey,
-                                      event.target.value
-                                    )
+                                  options={ledgerNames}
+                                  onChange={(newValue) =>
+                                    handleLedgerInputChange(rowKey, newValue)
                                   }
-                                  placeholder="Select or type ledger"
-                                  className="w-56 rounded-xl border border-amber-200 bg-white px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+                                  onAddNew={async (newName) => {
+                                    try {
+                                      await createLedgerNameApi({ name: newName });
+                                      await loadLedgerNames();
+                                      handleLedgerInputChange(rowKey, newName);
+                                      setStatus({
+                                        type: "success",
+                                        message: "Ledger name added.",
+                                      });
+                                    } catch (error) {
+                                      console.error("Failed to add ledger name:", error);
+                                      setStatus({
+                                        type: "error",
+                                        message:
+                                          error?.response?.data?.message ||
+                                          "Unable to add ledger name.",
+                                      });
+                                    }
+                                  }}
                                 />
                               ) : (
                                 <span>{toDisplayValue(row?.[column])}</span>

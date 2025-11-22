@@ -16,6 +16,7 @@ const COLLECTIONS = {
   settings: { filename: "settings.json", defaultValue: {} },
   ledgerNames: { filename: "ledgerNames.json", defaultValue: [] },
   companyMasters: { filename: "companyMasters.json", defaultValue: [] },
+  partyMasters: { filename: "partyMasters.json", defaultValue: [] },
   gstinNumbers: { filename: "gstinNumbers.json", defaultValue: [] },
   gstr2bImports: { filename: "gstr2bImports.json", defaultValue: [] },
   processedFiles: { filename: "processedFiles.json", defaultValue: [] },

@@ -16,6 +16,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import BackButton from "../components/BackButton";
 import ExcelPreviewModal from "../components/ExcelPreviewModal.jsx";
+import LedgerNameDropdown from "../components/LedgerNameDropdown";
 import { fetchCompanyMasterById } from "../services/companymasterservices";
 import {
   fetchImportById,
@@ -157,7 +158,6 @@ const B2BCompanyHistory = () => {
     () => ledgerModal.processed?.processedRows || [],
     [ledgerModal.processed]
   );
-  const ledgerOptionListId = "history-ledger-name-options";
   const ledgerModalColumns = useMemo(
     () => (ledgerModalRows[0] ? Object.keys(ledgerModalRows[0]) : []),
     [ledgerModalRows]
@@ -652,11 +652,6 @@ const B2BCompanyHistory = () => {
                 )}
               </button>
             </div>
-            <datalist id={ledgerOptionListId}>
-              {ledgerNames.map((ledger) => (
-                <option key={ledger._id} value={ledger.name} />
-              ))}
-            </datalist>
             <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh]">
               {hasLedgerModalRows ? (
                 <table className="min-w-full text-xs text-slate-700">
@@ -684,17 +679,31 @@ const B2BCompanyHistory = () => {
                           {ledgerModalColumns.map((column) => (
                             <td key={`${rowKey}-${column}`} className="px-2 py-2">
                               {column === "Ledger Name" ? (
-                                <input
-                                  list={ledgerOptionListId}
+                                <LedgerNameDropdown
                                   value={ledgerValue}
-                                  onChange={(event) =>
-                                    modalHandleLedgerInputChange(
-                                      rowKey,
-                                      event.target.value
-                                    )
+                                  options={ledgerNames}
+                                  onChange={(newValue) =>
+                                    modalHandleLedgerInputChange(rowKey, newValue)
                                   }
-                                  placeholder="Select or type ledger"
-                                  className="w-56 rounded-xl border border-amber-200 bg-white px-3 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+                                  onAddNew={async (newName) => {
+                                    try {
+                                      await createLedgerNameApi({ name: newName });
+                                      await loadLedgerNames();
+                                      modalHandleLedgerInputChange(rowKey, newName);
+                                      setStatus({
+                                        type: "success",
+                                        message: "Ledger name added.",
+                                      });
+                                    } catch (error) {
+                                      console.error("Failed to add ledger name:", error);
+                                      setStatus({
+                                        type: "error",
+                                        message:
+                                          error?.response?.data?.message ||
+                                          "Unable to add ledger name.",
+                                      });
+                                    }
+                                  }}
                                 />
                               ) : (
                                 <span>{toDisplayValue(row?.[column])}</span>

@@ -5,6 +5,7 @@ import {
   FiPlus,
   FiRefreshCw,
   FiSave,
+  FiSearch,
   FiTrash2,
   FiX,
 } from "react-icons/fi";
@@ -25,6 +26,7 @@ const LedgerNameManager = () => {
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editingValue, setEditingValue] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [confirmState, setConfirmState] = useState({
     open: false,
     targetId: null,
@@ -145,6 +147,10 @@ const LedgerNameManager = () => {
     }
   };
 
+  const filteredLedgerNames = ledgerNames.filter((entry) =>
+    entry.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <motion.main
       className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
@@ -237,34 +243,52 @@ const LedgerNameManager = () => {
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <header className="flex items-center justify-between border-b border-amber-100 px-4 py-3 text-sm text-slate-600">
-            <span>
-              {loading
-                ? "Loading ledger names..."
-                : `${ledgerNames.length} ledger names`}
-            </span>
-            <button
-              type="button"
-              onClick={loadLedgerNames}
-              className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-600 hover:bg-amber-50"
-            >
-              <FiRefreshCw />
-              Refresh
-            </button>
+          <header className="flex flex-col gap-3 border-b border-amber-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex-1">
+              <div className="relative">
+                <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search ledger names..."
+                  className="w-full rounded-xl border border-amber-200 bg-white pl-10 pr-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-600">
+                {loading
+                  ? "Loading..."
+                  : searchTerm
+                  ? `${filteredLedgerNames.length} of ${ledgerNames.length}`
+                  : `${ledgerNames.length} ledger names`}
+              </span>
+              <button
+                type="button"
+                onClick={loadLedgerNames}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-600 hover:bg-amber-50"
+              >
+                <FiRefreshCw />
+                Refresh
+              </button>
+            </div>
           </header>
           <div className="max-h-[60vh] overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center py-10 text-slate-500">
                 <FiRefreshCw className="animate-spin text-lg" />
               </div>
-            ) : ledgerNames.length === 0 ? (
+            ) : filteredLedgerNames.length === 0 ? (
               <p className="py-6 text-center text-sm text-slate-500">
-                No ledger names found. Add one above to get started.
+                {searchTerm
+                  ? "No ledger names match your search."
+                  : "No ledger names found. Add one above to get started."}
               </p>
             ) : (
               <table className="min-w-full divide-y divide-amber-50 text-sm text-slate-700">
                 <tbody>
-                  {ledgerNames.map((entry, index) => (
+                  {filteredLedgerNames.map((entry, index) => (
                     <tr
                       key={entry._id}
                       className="border-b border-amber-50 last:border-none"

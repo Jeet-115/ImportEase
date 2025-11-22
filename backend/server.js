@@ -5,6 +5,7 @@ import companyMasterRoutes from "./routes/companymasterroutes.js";
 import gstinNumberRoutes from "./routes/gstinnumberroutes.js";
 import gstr2BImportRoutes from "./routes/gstr2bimportroutes.js";
 import ledgerNameRoutes from "./routes/ledgernameroutes.js";
+import partyMasterRoutes from "./routes/partymasterroutes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
@@ -46,6 +47,7 @@ app.use("/api/company-master", companyMasterRoutes);
 app.use("/api/gstin-numbers", gstinNumberRoutes);
 app.use("/api/gstr2b-imports", gstr2BImportRoutes);
 app.use("/api/ledger-names", ledgerNameRoutes);
+app.use("/api/party-masters", partyMasterRoutes);
 
 // Root route
 app.get("/", (req, res) => {
