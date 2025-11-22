@@ -285,35 +285,67 @@ const CompanyProcessor = () => {
 
   // Compare GSTINs and find missing suppliers
   useEffect(() => {
-    if (!hasProcessedRows || !partyMasters.length) {
+    if (!hasProcessedRows) {
       setMissingSuppliers([]);
       return;
     }
 
+    // If party masters are still loading, wait
+    if (partyMastersLoading) {
+      return;
+    }
+
     // Create a set of GSTINs from party masters (normalized to uppercase)
+    // If partyMasters is empty, all suppliers will be considered missing
     const partyMasterGstinSet = new Set(
       partyMasters.map((party) => party.gstin?.trim().toUpperCase() || "")
     );
 
+    // Find the actual column names from processedColumns
+    // They could be camelCase (from backend) or display names
+    const gstinColumn = processedColumns.find(
+      (col) =>
+        col.toLowerCase().includes("gstin") ||
+        col.toLowerCase().includes("uin") ||
+        col === "gstinUin" ||
+        col === "gstin"
+    );
+    const supplierColumn = processedColumns.find(
+      (col) =>
+        col.toLowerCase().includes("supplier") ||
+        col === "supplierName" ||
+        col === "supplier"
+    );
+
+    if (!gstinColumn || !supplierColumn) {
+      console.warn("Could not find GSTIN or Supplier column in processed rows");
+      setMissingSuppliers([]);
+      return;
+    }
+
     // Extract unique suppliers from processed rows
     const supplierMap = new Map();
     processedRows.forEach((row) => {
-      const gstin = String(row["GSTIN/UIN"] || "").trim().toUpperCase();
-      const supplierName = String(row["Supplier Name"] || "").trim();
+      const gstinRaw = String(row[gstinColumn] || "").trim();
+      const gstin = gstinRaw.toUpperCase();
+      const supplierName = String(row[supplierColumn] || "").trim();
       
+      // If GSTIN and supplier name exist, and GSTIN is not in party masters
       if (gstin && supplierName && !partyMasterGstinSet.has(gstin)) {
         // Use GSTIN as key to avoid duplicates
         if (!supplierMap.has(gstin)) {
           supplierMap.set(gstin, {
             supplierName,
-            gstin: row["GSTIN/UIN"] || "", // Keep original case for display
+            gstin: gstinRaw, // Keep original case for display
           });
         }
       }
     });
 
     setMissingSuppliers(Array.from(supplierMap.values()));
-  }, [processedRows, partyMasters, hasProcessedRows]);
+
+    setMissingSuppliers(Array.from(supplierMap.values()));
+  }, [processedRows, partyMasters, hasProcessedRows, partyMastersLoading]);
 
   const openAddLedgerModal = () =>
     setAddLedgerModal({ open: true, value: "", submitting: false });
