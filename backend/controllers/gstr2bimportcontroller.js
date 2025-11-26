@@ -8,6 +8,7 @@ import {
 import {
   findById as findProcessedById,
   updateLedgerNames as updateProcessedLedgerNamesById,
+  updateReverseChargeLedgerNames as updateReverseChargeLedgerNamesById,
 } from "../models/processedfilemodel.js";
 import { processAndStoreDocument } from "../utils/gstr2bProcessor.js";
 
@@ -317,6 +318,70 @@ export const updateProcessedLedgerNames = async (req, res) => {
     console.error("updateProcessedLedgerNames Error:", error);
     return res.status(500).json({
       message: error.message || "Failed to update ledger names.",
+    });
+  }
+};
+
+export const updateReverseChargeLedgerNames = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) {
+      return res.status(400).json({ message: "rows payload is required." });
+    }
+
+    const sanitized = rows
+      .map((row) => ({
+        slNo:
+          row?.slNo !== undefined && row?.slNo !== null
+            ? Number(row.slNo)
+            : undefined,
+        index:
+          row?.index !== undefined && row?.index !== null
+            ? Number(row.index)
+            : undefined,
+        ledgerName:
+          typeof row?.ledgerName === "string" ? row.ledgerName : row?.ledgerName,
+      }))
+      .filter(
+        (row) =>
+          (row.slNo !== undefined && !Number.isNaN(row.slNo)) ||
+          (row.index !== undefined && !Number.isNaN(row.index))
+      );
+
+    if (!sanitized.length) {
+      return res
+        .status(400)
+        .json({ message: "rows payload is invalid or empty." });
+    }
+
+    const updated = await updateReverseChargeLedgerNamesById(id, sanitized);
+    if (!updated) {
+      return res.status(404).json({ message: "Processed file not found or no reverse charge rows available." });
+    }
+
+    // Ensure the response includes reverseChargeRows
+    if (!updated.reverseChargeRows || !Array.isArray(updated.reverseChargeRows)) {
+      console.error("Updated document missing reverseChargeRows:", updated);
+      return res.status(500).json({ 
+        message: "Server error: Updated document is missing reverse charge rows." 
+      });
+    }
+
+    // Check if reverseChargeRows is empty
+    if (updated.reverseChargeRows.length === 0) {
+      return res.status(400).json({ 
+        message: "No reverse charge rows available to update." 
+      });
+    }
+
+    return res
+      .status(200)
+      .json({ message: "Reverse charge ledger names updated.", processed: updated });
+  } catch (error) {
+    console.error("updateReverseChargeLedgerNames Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to update reverse charge ledger names.",
     });
   }
 };

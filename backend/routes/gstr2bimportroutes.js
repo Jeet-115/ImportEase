@@ -6,6 +6,7 @@ import {
   getImportById,
   processB2BImport,
   updateProcessedLedgerNames,
+  updateReverseChargeLedgerNames,
   uploadMiddleware,
 } from "../controllers/gstr2bimportcontroller.js";
 
@@ -17,6 +18,7 @@ router.get("/:id", getImportById);
 router.post("/:id/process", processB2BImport);
 router.get("/:id/processed", getProcessedFile);
 router.put("/:id/processed/ledger-names", updateProcessedLedgerNames);
+router.put("/:id/processed/reverse-charge/ledger-names", updateReverseChargeLedgerNames);
 
 export default router;
 

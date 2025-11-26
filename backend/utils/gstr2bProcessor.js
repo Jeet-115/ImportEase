@@ -211,19 +211,50 @@ export const processRows = async (rows) => {
   const gstStateMap = await buildStateMap();
   const matchedRows = [];
   const mismatchedRows = [];
+  const reverseChargeRows = [];
 
+  let reverseChargeCount = 0;
   rows.forEach((row, index) => {
+    // Check if this row has reverse charge = "yes"
+    // Handle various formats: "yes", "Yes", "YES", "Y", "1", true, etc.
+    const reverseChargeValue = row?.reverseCharge;
+    let isReverseCharge = false;
+    
+    if (reverseChargeValue !== null && reverseChargeValue !== undefined) {
+      const normalized = String(reverseChargeValue).trim().toLowerCase();
+      // Check for "yes", "y", "1", or boolean true
+      isReverseCharge = 
+        normalized === "yes" || 
+        normalized === "y" || 
+        normalized === "1" ||
+        normalized === "true" ||
+        reverseChargeValue === true ||
+        reverseChargeValue === 1;
+      
+      // Debug: log first few reverse charge values to verify
+      if (index < 5) {
+        console.log(`Row ${index}: reverseChargeValue="${reverseChargeValue}", normalized="${normalized}", isReverseCharge=${isReverseCharge}`);
+      }
+    }
+
     const { record, isMismatched } = processRowWithMap(
       row,
       index,
       gstStateMap
     );
-    if (isMismatched) {
+
+    // If reverse charge, add to reverseChargeRows and skip adding to matched/mismatched
+    if (isReverseCharge) {
+      reverseChargeRows.push(record);
+      reverseChargeCount++;
+    } else if (isMismatched) {
       mismatchedRows.push(record);
     } else {
       matchedRows.push(record);
     }
   });
+  
+  console.log(`Processing complete: ${reverseChargeRows.length} reverse charge rows, ${matchedRows.length} matched rows, ${mismatchedRows.length} mismatched rows`);
 
   const renumber = (list) =>
     list.map((entry, idx) => ({
@@ -234,6 +265,7 @@ export const processRows = async (rows) => {
   return {
     matchedRows: renumber(matchedRows),
     mismatchedRows: renumber(mismatchedRows),
+    reverseChargeRows: renumber(reverseChargeRows),
   };
 };
 
@@ -242,7 +274,7 @@ export const processAndStoreDocument = async (doc) => {
   const rows = Array.isArray(doc.rows) ? doc.rows : [];
   if (!rows.length) return null;
 
-  const { matchedRows, mismatchedRows } = await processRows(rows);
+  const { matchedRows, mismatchedRows, reverseChargeRows } = await processRows(rows);
 
   const payload = {
     _id: doc._id,
@@ -250,6 +282,8 @@ export const processAndStoreDocument = async (doc) => {
     companySnapshot: doc.companySnapshot || {},
     processedRows: matchedRows,
     mismatchedRows,
+    reverseChargeRows: reverseChargeRows || [],
+    disallowRows: Array.isArray(doc.disallowRows) ? doc.disallowRows : [],
     processedAt: new Date(),
   };
 

@@ -22,6 +22,7 @@ import {
   fetchImportById,
   fetchImportsByCompany,
   fetchProcessedFile,
+  updateReverseChargeLedgerNames,
 } from "../services/gstr2bservice";
 import {
   createLedgerName as createLedgerNameApi,
@@ -37,6 +38,23 @@ const toDisplayValue = (value) => {
     return value;
   }
   return String(value);
+};
+
+// Disallow ledger names that should be separated into a disallow sheet
+const DISALLOW_LEDGER_NAMES = [
+  "Penalty [disallow]",
+  "Repair of Vehicle [disallow]",
+  "Insurance of Vehicle [disallow]",
+  "Festival Exp. [disallow]",
+];
+
+// Function to filter rows with disallow ledger names
+const filterDisallowRows = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((row) => {
+    const ledgerName = String(row?.["Ledger Name"] || "").trim();
+    return DISALLOW_LEDGER_NAMES.includes(ledgerName);
+  });
 };
 
 const B2BCompanyHistory = () => {
@@ -68,6 +86,7 @@ const B2BCompanyHistory = () => {
     open: false,
     processed: null,
     importId: null,
+    activeTab: "processed", // "processed" or "reverseCharge"
   });
 
   useEffect(() => {
@@ -154,15 +173,27 @@ const B2BCompanyHistory = () => {
     []
   );
 
-  const ledgerModalRows = useMemo(
+  const ledgerModalProcessedRows = useMemo(
     () => ledgerModal.processed?.processedRows || [],
     [ledgerModal.processed]
+  );
+  const ledgerModalReverseChargeRows = useMemo(
+    () => ledgerModal.processed?.reverseChargeRows || [],
+    [ledgerModal.processed]
+  );
+  const ledgerModalRows = useMemo(
+    () => ledgerModal.activeTab === "processed" 
+      ? ledgerModalProcessedRows 
+      : ledgerModalReverseChargeRows,
+    [ledgerModal.activeTab, ledgerModalProcessedRows, ledgerModalReverseChargeRows]
   );
   const ledgerModalColumns = useMemo(
     () => (ledgerModalRows[0] ? Object.keys(ledgerModalRows[0]) : []),
     [ledgerModalRows]
   );
   const hasLedgerModalRows = ledgerModalRows.length > 0;
+  const hasReverseChargeRows = ledgerModalReverseChargeRows.length > 0;
+  
   const {
     ledgerInputs: modalLedgerInputs,
     handleLedgerInputChange: modalHandleLedgerInputChange,
@@ -173,6 +204,12 @@ const B2BCompanyHistory = () => {
     rows: ledgerModalRows,
     importId: ledgerModal.importId,
     getRowKey: getProcessedRowKey,
+    updateFunction: ledgerModal.activeTab === "reverseCharge" 
+      ? updateReverseChargeLedgerNames 
+      : undefined,
+    rowsKey: ledgerModal.activeTab === "reverseCharge" 
+      ? "reverseChargeRows" 
+      : "processedRows",
     onUpdated: (updated) => {
       if (!updated || !ledgerModal.importId) return;
       setProcessedCache((prev) => ({
@@ -301,15 +338,205 @@ const B2BCompanyHistory = () => {
     }
   };
 
-  const openProcessedPreview = async (importId, mismatched = false) => {
+  const downloadReverseChargeExcel = async (importId) => {
     try {
       const doc = await ensureProcessedDoc(importId);
-      if (!doc) return;
-      const rows = mismatched ? doc.mismatchedRows : doc.processedRows;
+      if (!doc) {
+        setStatus({
+          type: "error",
+          message: "No processed data found for this import.",
+        });
+        return;
+      }
+      const rows = doc.reverseChargeRows || [];
       if (!rows?.length) {
         setStatus({
           type: "error",
-          message: mismatched
+          message: "No reverse charge rows available.",
+        });
+        return;
+      }
+
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(workbook, sheet, "Reverse Charge");
+      const filename = `${sanitizeFileName(
+        doc.company || company?.companyName || "company"
+      )} - supply reverse charge.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Reverse charge Excel downloaded.",
+      });
+    } catch (err) {
+      console.error("Failed to download reverse charge excel:", err);
+      setStatus({ type: "error", message: "Unable to download reverse charge data." });
+    }
+  };
+
+  const downloadDisallowExcel = async (importId) => {
+    try {
+      const doc = await ensureProcessedDoc(importId);
+      if (!doc) {
+        setStatus({
+          type: "error",
+          message: "No processed data found for this import.",
+        });
+        return;
+      }
+      const disallowRows =
+        doc.disallowRows?.length > 0
+          ? doc.disallowRows
+          : filterDisallowRows(doc.processedRows || []);
+      if (!disallowRows.length) {
+        setStatus({
+          type: "error",
+          message: "No rows with disallow ledger names found. Add 'Penalty [disallow]', 'Repair of Vehicle [disallow]', 'Insurance of Vehicle [disallow]', or 'Festival Exp. [disallow]' to ledger names first.",
+        });
+        return;
+      }
+
+      const workbook = XLSX.utils.book_new();
+      const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
+      XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
+      const filename = `${sanitizeFileName(
+        doc.company || company?.companyName || "company"
+      )} - disallow.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Disallow Excel downloaded.",
+      });
+    } catch (err) {
+      console.error("Failed to download disallow excel:", err);
+      setStatus({ type: "error", message: "Unable to download disallow data." });
+    }
+  };
+
+  const downloadCombinedExcel = async (importId) => {
+    try {
+      const doc = await ensureProcessedDoc(importId);
+      if (!doc) {
+        setStatus({
+          type: "error",
+          message: "No processed data found for this import.",
+        });
+        return;
+      }
+
+      const workbook = XLSX.utils.book_new();
+      
+      // Add processed sheet
+      if (doc.processedRows?.length > 0) {
+        const processedSheet = XLSX.utils.json_to_sheet(doc.processedRows);
+        XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
+      }
+      
+      // Add mismatched sheet
+      if (doc.mismatchedRows?.length > 0) {
+        const sanitizedMismatched = doc.mismatchedRows.map(
+          ({
+            "Ledger Amount 5%": _la5,
+            "Ledger DR/CR 5%": _ldr5,
+            "IGST Rate 5%": _ir5,
+            "CGST Rate 5%": _cr5,
+            "SGST/UTGST Rate 5%": _sr5,
+            "Ledger Amount 12%": _la12,
+            "Ledger DR/CR 12%": _ldr12,
+            "IGST Rate 12%": _ir12,
+            "CGST Rate 12%": _cr12,
+            "SGST/UTGST Rate 12%": _sr12,
+            "Ledger Amount 18%": _la18,
+            "Ledger DR/CR 18%": _ldr18,
+            "IGST Rate 18%": _ir18,
+            "CGST Rate 18%": _cr18,
+            "SGST/UTGST Rate 18%": _sr18,
+            "Ledger Amount 28%": _la28,
+            "Ledger DR/CR 28%": _ldr28,
+            "IGST Rate 28%": _ir28,
+            "CGST Rate 28%": _cr28,
+            "SGST/UTGST Rate 28%": _sr28,
+            ...rest
+          }) => rest
+        );
+        const mismatchedSheet = XLSX.utils.json_to_sheet(sanitizedMismatched);
+        XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
+      }
+      
+      // Add reverse charge sheet
+      if (doc.reverseChargeRows?.length > 0) {
+        const reverseChargeSheet = XLSX.utils.json_to_sheet(doc.reverseChargeRows);
+        XLSX.utils.book_append_sheet(workbook, reverseChargeSheet, "Reverse Charge");
+      }
+      
+      // Add disallow sheet if any rows have disallow ledger names
+      const disallowRows =
+        doc.disallowRows?.length > 0
+          ? doc.disallowRows
+          : filterDisallowRows(doc.processedRows || []);
+      if (disallowRows.length > 0) {
+        const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
+        XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
+      }
+
+      if (workbook.SheetNames.length === 0) {
+        setStatus({
+          type: "error",
+          message: "No data available to download.",
+        });
+        return;
+      }
+
+      const filename = `${sanitizeFileName(
+        doc.company || company?.companyName || "company"
+      )} - combined.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Combined Excel file downloaded with all sheets.",
+      });
+    } catch (err) {
+      console.error("Failed to download combined excel:", err);
+      setStatus({ type: "error", message: "Unable to download combined data." });
+    }
+  };
+
+  const openProcessedPreview = async (
+    importId,
+    mismatched = false,
+    reverseCharge = false,
+    disallow = false
+  ) => {
+    try {
+      const doc = await ensureProcessedDoc(importId);
+      if (!doc) return;
+      let rows;
+      let previewTitle = "Processed Rows Preview";
+
+      if (disallow) {
+        rows =
+          doc.disallowRows?.length > 0
+            ? doc.disallowRows
+            : filterDisallowRows(doc.processedRows || []);
+        previewTitle = "Disallow Rows Preview";
+      } else if (reverseCharge) {
+        rows = doc.reverseChargeRows || [];
+        previewTitle = "Reverse Charge Rows Preview";
+      } else if (mismatched) {
+        rows = doc.mismatchedRows || [];
+        previewTitle = "Mismatched Rows Preview";
+      } else {
+        rows = doc.processedRows || [];
+      }
+
+      if (!rows?.length) {
+        setStatus({
+          type: "error",
+          message: disallow
+            ? "No disallow rows available."
+            : reverseCharge
+            ? "No reverse charge rows available."
+            : mismatched
             ? "No mismatched rows available."
             : "No processed rows available.",
         });
@@ -333,7 +560,7 @@ const B2BCompanyHistory = () => {
 
       setPreview({
         open: true,
-        title: mismatched ? "Mismatched Rows Preview" : "Processed Rows Preview",
+        title: previewTitle,
         columns,
         rows: displayRows,
       });
@@ -369,7 +596,7 @@ const B2BCompanyHistory = () => {
   };
 
   const closeLedgerModal = () =>
-    setLedgerModal({ open: false, processed: null, importId: null });
+    setLedgerModal({ open: false, processed: null, importId: null, activeTab: "processed" });
 
   const handleLedgerModalSave = async () => {
     try {
@@ -570,6 +797,36 @@ const B2BCompanyHistory = () => {
                           >
                             <FiEye /> Mismatched
                           </button>
+                          <button
+                            onClick={() => downloadReverseChargeExcel(imp._id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-purple-200 px-3 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-50"
+                          >
+                            <FiDownload /> Reverse Charge
+                          </button>
+                          <button
+                            onClick={() => openProcessedPreview(imp._id, false, true)}
+                            className="inline-flex items-center gap-1 rounded-full border border-purple-200 px-3 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-50"
+                          >
+                            <FiEye /> Reverse Charge
+                          </button>
+                          <button
+                            onClick={() => downloadDisallowExcel(imp._id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                          >
+                            <FiDownload /> Disallow
+                          </button>
+                          <button
+                            onClick={() => openProcessedPreview(imp._id, false, false, true)}
+                            className="inline-flex items-center gap-1 rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                          >
+                            <FiEye /> Disallow
+                          </button>
+                          <button
+                            onClick={() => downloadCombinedExcel(imp._id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                          >
+                            <FiDownload /> Combined
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -611,6 +868,33 @@ const B2BCompanyHistory = () => {
                 <FiX />
               </button>
             </header>
+            {/* Tabs */}
+            <div className="flex gap-2 border-b border-amber-200">
+              <button
+                type="button"
+                onClick={() => setLedgerModal((prev) => ({ ...prev, activeTab: "processed" }))}
+                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                  ledgerModal.activeTab === "processed"
+                    ? "border-amber-500 text-amber-700"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Processed Rows ({ledgerModalProcessedRows.length})
+              </button>
+              {hasReverseChargeRows && (
+                <button
+                  type="button"
+                  onClick={() => setLedgerModal((prev) => ({ ...prev, activeTab: "reverseCharge" }))}
+                  className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                    ledgerModal.activeTab === "reverseCharge"
+                      ? "border-purple-500 text-purple-700"
+                      : "border-transparent text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  Reverse Charge Rows ({ledgerModalReverseChargeRows.length})
+                </button>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"

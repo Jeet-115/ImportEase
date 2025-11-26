@@ -17,6 +17,7 @@ import {
   uploadB2BSheet,
   processGstr2bImport,
   fetchProcessedFile,
+  updateReverseChargeLedgerNames,
 } from "../services/gstr2bservice";
 import {
   createLedgerName as createLedgerNameApi,
@@ -182,6 +183,23 @@ const toDisplayValue = (value) => {
   return String(value);
 };
 
+// Disallow ledger names that should be separated into a disallow sheet
+const DISALLOW_LEDGER_NAMES = [
+  "Penalty [disallow]",
+  "Repair of Vehicle [disallow]",
+  "Insurance of Vehicle [disallow]",
+  "Festival Exp. [disallow]",
+];
+
+// Function to filter rows with disallow ledger names
+const filterDisallowRows = (rows) => {
+  if (!Array.isArray(rows)) return [];
+  return rows.filter((row) => {
+    const ledgerName = String(row?.["Ledger Name"] || "").trim();
+    return DISALLOW_LEDGER_NAMES.includes(ledgerName);
+  });
+};
+
 const CompanyProcessor = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -213,25 +231,56 @@ const CompanyProcessor = () => {
     []
   );
 
+  const [activeTab, setActiveTab] = useState("processed"); // "processed" or "reverseCharge"
+
   const processedRows = useMemo(
     () => processedDoc?.processedRows || [],
+    [processedDoc]
+  );
+  const reverseChargeRows = useMemo(
+    () => processedDoc?.reverseChargeRows || [],
     [processedDoc]
   );
   const processedColumns = useMemo(
     () => (processedRows[0] ? Object.keys(processedRows[0]) : []),
     [processedRows]
   );
+  const reverseChargeColumns = useMemo(
+    () => (reverseChargeRows[0] ? Object.keys(reverseChargeRows[0]) : []),
+    [reverseChargeRows]
+  );
   const hasProcessedRows = processedRows.length > 0;
+  const hasReverseChargeRows = reverseChargeRows.length > 0;
+  
   const {
-    ledgerInputs,
-    handleLedgerInputChange,
-    dirtyCount: ledgerDirtyCount,
-    persistLedgerChanges,
-    savingLedgerChanges,
+    ledgerInputs: processedLedgerInputs,
+    handleLedgerInputChange: handleProcessedLedgerInputChange,
+    dirtyCount: processedLedgerDirtyCount,
+    persistLedgerChanges: persistProcessedLedgerChanges,
+    savingLedgerChanges: savingProcessedLedgerChanges,
   } = useLedgerNameEditing({
     rows: processedRows,
     importId,
     getRowKey,
+    onUpdated: (updated) => {
+      if (updated) {
+        setProcessedDoc(updated);
+      }
+    },
+  });
+
+  const {
+    ledgerInputs: reverseChargeLedgerInputs,
+    handleLedgerInputChange: handleReverseChargeLedgerInputChange,
+    dirtyCount: reverseChargeLedgerDirtyCount,
+    persistLedgerChanges: persistReverseChargeLedgerChanges,
+    savingLedgerChanges: savingReverseChargeLedgerChanges,
+  } = useLedgerNameEditing({
+    rows: reverseChargeRows,
+    importId,
+    getRowKey,
+    updateFunction: updateReverseChargeLedgerNames,
+    rowsKey: "reverseChargeRows",
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
@@ -383,11 +432,14 @@ const CompanyProcessor = () => {
 
   const handleSaveLedgerNames = async () => {
     try {
-      const updated = await persistLedgerChanges();
+      const persistFn = activeTab === "processed" 
+        ? persistProcessedLedgerChanges 
+        : persistReverseChargeLedgerChanges;
+      const updated = await persistFn();
       if (updated) {
         setStatus({
           type: "success",
-          message: "Ledger names saved to processed data.",
+          message: `Ledger names saved to ${activeTab === "processed" ? "processed" : "reverse charge"} data.`,
         });
       } else {
         setStatus({
@@ -698,7 +750,7 @@ const CompanyProcessor = () => {
   const handleDownloadProcessedExcel = async () => {
     if (!guardDownloads()) return;
     try {
-      const savedDoc = await persistLedgerChanges();
+      const savedDoc = await persistProcessedLedgerChanges();
       const doc = savedDoc || (await ensureProcessedDoc());
       if (!doc) return;
 
@@ -783,6 +835,179 @@ const CompanyProcessor = () => {
       type: "success",
       message: "Mismatched data Excel downloaded.",
     });
+  };
+
+  const handleDownloadReverseChargeExcel = async () => {
+    if (!guardDownloads()) return;
+    try {
+      const savedDoc = await persistReverseChargeLedgerChanges();
+      const doc = savedDoc || (await ensureProcessedDoc());
+      if (!doc) return;
+
+      const reverseChargeRows = doc.reverseChargeRows || [];
+      if (!reverseChargeRows.length) {
+        setStatus({
+          type: "error",
+          message: "No reverse charge rows available.",
+        });
+        return;
+      }
+
+      const workbook = XLSX.utils.book_new();
+      const reverseChargeSheet = XLSX.utils.json_to_sheet(reverseChargeRows);
+      XLSX.utils.book_append_sheet(workbook, reverseChargeSheet, "Reverse Charge");
+      const filename = `${sanitizeFileName(
+        doc.company || company?.companyName || "company"
+      )} - supply reverse charge.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Reverse charge Excel downloaded.",
+      });
+    } catch (error) {
+      console.error("Failed to download reverse charge excel:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to download reverse charge data. Please try again.",
+      });
+    }
+  };
+
+  const handleDownloadDisallowExcel = async () => {
+    if (!guardDownloads()) return;
+    try {
+      // Save any pending changes first
+      await persistProcessedLedgerChanges();
+      
+      const doc = await ensureProcessedDoc();
+      if (!doc) return;
+
+      const disallowRows =
+        doc.disallowRows?.length > 0
+          ? doc.disallowRows
+          : filterDisallowRows(doc.processedRows || []);
+      if (!disallowRows.length) {
+        setStatus({
+          type: "error",
+          message: "No rows with disallow ledger names found. Add 'Penalty [disallow]', 'Repair of Vehicle [disallow]', 'Insurance of Vehicle [disallow]', or 'Festival Exp. [disallow]' to ledger names first.",
+        });
+        return;
+      }
+
+      const workbook = XLSX.utils.book_new();
+      const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
+      XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
+      const filename = `${sanitizeFileName(
+        doc.company || company?.companyName || "company"
+      )} - disallow.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Disallow Excel downloaded.",
+      });
+    } catch (error) {
+      console.error("Failed to download disallow excel:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to download disallow data. Please try again.",
+      });
+    }
+  };
+
+  const handleDownloadCombinedExcel = async () => {
+    if (!guardDownloads()) return;
+    try {
+      // Save any pending changes for both tabs
+      await persistProcessedLedgerChanges();
+      await persistReverseChargeLedgerChanges();
+      
+      const doc = await ensureProcessedDoc();
+      if (!doc) return;
+
+      const workbook = XLSX.utils.book_new();
+      
+      // Add processed sheet
+      if (doc.processedRows?.length > 0) {
+        const processedSheet = XLSX.utils.json_to_sheet(doc.processedRows);
+        XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
+      }
+      
+      // Add mismatched sheet
+      if (doc.mismatchedRows?.length > 0) {
+        const sanitizedMismatched = doc.mismatchedRows.map(
+          ({
+            "Ledger Amount 5%": _la5,
+            "Ledger DR/CR 5%": _ldr5,
+            "IGST Rate 5%": _ir5,
+            "CGST Rate 5%": _cr5,
+            "SGST/UTGST Rate 5%": _sr5,
+            "Ledger Amount 12%": _la12,
+            "Ledger DR/CR 12%": _ldr12,
+            "IGST Rate 12%": _ir12,
+            "CGST Rate 12%": _cr12,
+            "SGST/UTGST Rate 12%": _sr12,
+            "Ledger Amount 18%": _la18,
+            "Ledger DR/CR 18%": _ldr18,
+            "IGST Rate 18%": _ir18,
+            "CGST Rate 18%": _cr18,
+            "SGST/UTGST Rate 18%": _sr18,
+            "Ledger Amount 28%": _la28,
+            "Ledger DR/CR 28%": _ldr28,
+            "IGST Rate 28%": _ir28,
+            "CGST Rate 28%": _cr28,
+            "SGST/UTGST Rate 28%": _sr28,
+            ...rest
+          }) => rest
+        );
+        const mismatchedSheet = XLSX.utils.json_to_sheet(sanitizedMismatched);
+        XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
+      }
+      
+      // Add reverse charge sheet
+      if (doc.reverseChargeRows?.length > 0) {
+        const reverseChargeSheet = XLSX.utils.json_to_sheet(doc.reverseChargeRows);
+        XLSX.utils.book_append_sheet(workbook, reverseChargeSheet, "Reverse Charge");
+      }
+      
+      // Add disallow sheet if any rows have disallow ledger names
+      const disallowRows =
+        doc.disallowRows?.length > 0
+          ? doc.disallowRows
+          : filterDisallowRows(doc.processedRows || []);
+      if (disallowRows.length > 0) {
+        const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
+        XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
+      }
+
+      if (workbook.SheetNames.length === 0) {
+        setStatus({
+          type: "error",
+          message: "No data available to download.",
+        });
+        return;
+      }
+
+      const filename = `${sanitizeFileName(
+        doc.company || company?.companyName || "company"
+      )} - combined.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Combined Excel file downloaded with all sheets.",
+      });
+    } catch (error) {
+      console.error("Failed to download combined excel:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to download combined data. Please try again.",
+      });
+    }
   };
 
   const handleProcessSheet = () => {
@@ -962,6 +1187,30 @@ const CompanyProcessor = () => {
                 Mismatched Excel
               </button>
               <button
+                onClick={handleDownloadReverseChargeExcel}
+                disabled={!downloadsUnlocked}
+                className="inline-flex items-center gap-2 rounded-full bg-purple-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiDownload />
+                Reverse Charge Excel
+              </button>
+              <button
+                onClick={handleDownloadDisallowExcel}
+                disabled={!downloadsUnlocked}
+                className="inline-flex items-center gap-2 rounded-full bg-red-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiDownload />
+                Disallow Excel
+              </button>
+              <button
+                onClick={handleDownloadCombinedExcel}
+                disabled={!downloadsUnlocked}
+                className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiDownload />
+                Combined Excel (All Sheets)
+              </button>
+              <button
                 onClick={handleProcessSheet}
                 disabled={processing}
                 className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
@@ -987,15 +1236,16 @@ const CompanyProcessor = () => {
 
             {processedDoc ? (
               <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
-                Stored {processedDoc.processedRows?.length || 0} matched rows and{" "}
-                {processedDoc.mismatchedRows?.length || 0} mismatched rows for{" "}
+                Stored {processedDoc.processedRows?.length || 0} matched rows,{" "}
+                {processedDoc.mismatchedRows?.length || 0} mismatched rows, and{" "}
+                {processedDoc.reverseChargeRows?.length || 0} reverse charge rows for{" "}
                 {processedDoc.company || "company"}.
               </div>
             ) : null}
           </motion.section>
         ) : null}
 
-        {hasProcessedRows ? (
+        {(hasProcessedRows || hasReverseChargeRows) ? (
           <motion.section
             className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
             initial={{ y: 20, opacity: 0 }}
@@ -1031,10 +1281,38 @@ const CompanyProcessor = () => {
                 </div>
               </div>
             ) : null}
+            {/* Tabs */}
+            <div className="flex gap-2 border-b border-amber-200">
+              <button
+                type="button"
+                onClick={() => setActiveTab("processed")}
+                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                  activeTab === "processed"
+                    ? "border-amber-500 text-amber-700"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                Processed Rows ({processedRows.length})
+              </button>
+              {hasReverseChargeRows && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("reverseCharge")}
+                  className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                    activeTab === "reverseCharge"
+                      ? "border-purple-500 text-purple-700"
+                      : "border-transparent text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  Reverse Charge Rows ({reverseChargeRows.length})
+                </button>
+              )}
+            </div>
+
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <h3 className="text-xl font-semibold text-slate-900">
-                  Review processed rows
+                  {activeTab === "processed" ? "Review Processed Rows" : "Review Reverse Charge Rows"}
                 </h3>
                 <p className="text-sm text-slate-600">
                   Click the Ledger Name column to pick from saved ledgers or type to
@@ -1064,10 +1342,19 @@ const CompanyProcessor = () => {
                 <button
                   type="button"
                   onClick={handleSaveLedgerNames}
-                  disabled={!ledgerDirtyCount || savingLedgerChanges}
+                  disabled={
+                    (activeTab === "processed" 
+                      ? !processedLedgerDirtyCount 
+                      : !reverseChargeLedgerDirtyCount) || 
+                    (activeTab === "processed" 
+                      ? savingProcessedLedgerChanges 
+                      : savingReverseChargeLedgerChanges)
+                  }
                   className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {savingLedgerChanges ? (
+                  {(activeTab === "processed" 
+                    ? savingProcessedLedgerChanges 
+                    : savingReverseChargeLedgerChanges) ? (
                     <>
                       <FiRefreshCw className="animate-spin" />
                       Saving...
@@ -1075,11 +1362,17 @@ const CompanyProcessor = () => {
                   ) : (
                     <>
                       <FiSave />
-                      {ledgerDirtyCount
-                        ? `Save ${ledgerDirtyCount} change${
-                            ledgerDirtyCount > 1 ? "s" : ""
-                          }`
-                        : "Save ledger names"}
+                      {activeTab === "processed"
+                        ? (processedLedgerDirtyCount
+                            ? `Save ${processedLedgerDirtyCount} change${
+                                processedLedgerDirtyCount > 1 ? "s" : ""
+                              }`
+                            : "Save ledger names")
+                        : (reverseChargeLedgerDirtyCount
+                            ? `Save ${reverseChargeLedgerDirtyCount} change${
+                                reverseChargeLedgerDirtyCount > 1 ? "s" : ""
+                              }`
+                            : "Save ledger names")}
                     </>
                   )}
                 </button>
@@ -1094,7 +1387,7 @@ const CompanyProcessor = () => {
               <table className="min-w-full text-xs text-slate-700">
                 <thead className="sticky top-0 bg-white">
                   <tr>
-                    {processedColumns.map((column) => (
+                    {(activeTab === "processed" ? processedColumns : reverseChargeColumns).map((column) => (
                       <th
                         key={column}
                         className="px-2 py-2 text-left font-semibold border-b border-amber-100"
@@ -1105,15 +1398,21 @@ const CompanyProcessor = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {processedRows.map((row, rowIdx) => {
+                  {(activeTab === "processed" ? processedRows : reverseChargeRows).map((row, rowIdx) => {
                     const rowKey = getRowKey(row, rowIdx);
-                    const ledgerValue = ledgerInputs[rowKey] ?? "";
+                    const ledgerValue = (activeTab === "processed" 
+                      ? processedLedgerInputs 
+                      : reverseChargeLedgerInputs)[rowKey] ?? "";
+                    const handleChange = activeTab === "processed"
+                      ? handleProcessedLedgerInputChange
+                      : handleReverseChargeLedgerInputChange;
+                    const columns = activeTab === "processed" ? processedColumns : reverseChargeColumns;
                     return (
                       <tr
                         key={rowKey}
                         className="border-b border-amber-50 last:border-0"
                       >
-                        {processedColumns.map((column) => {
+                        {columns.map((column) => {
                           const cellKey = `${rowKey}-${column}`;
                           return (
                             <td
@@ -1125,13 +1424,13 @@ const CompanyProcessor = () => {
                                   value={ledgerValue}
                                   options={ledgerNames}
                                   onChange={(newValue) =>
-                                    handleLedgerInputChange(rowKey, newValue)
+                                    handleChange(rowKey, newValue)
                                   }
                                   onAddNew={async (newName) => {
                                     try {
                                       await createLedgerNameApi({ name: newName });
                                       await loadLedgerNames();
-                                      handleLedgerInputChange(rowKey, newName);
+                                      handleChange(rowKey, newName);
                                       setStatus({
                                         type: "success",
                                         message: "Ledger name added.",

@@ -32,3 +32,6 @@ export const fetchImportById = (id) =>
 export const updateProcessedLedgerNames = (id, payload) =>
   axiosInstance.put(`/api/gstr2b-imports/${id}/processed/ledger-names`, payload);
 
+export const updateReverseChargeLedgerNames = (id, payload) =>
+  axiosInstance.put(`/api/gstr2b-imports/${id}/processed/reverse-charge/ledger-names`, payload);
+

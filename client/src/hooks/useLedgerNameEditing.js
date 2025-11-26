@@ -23,6 +23,8 @@ const useLedgerNameEditing = ({
   importId,
   getRowKey = defaultRowKeyFn,
   onUpdated,
+  updateFunction, // Optional custom update function
+  rowsKey = "processedRows", // Key to get rows from updated response
 }) => {
   const [inputs, setInputs] = useState({});
   const [dirtyRows, setDirtyRows] = useState(new Set());
@@ -99,14 +101,34 @@ const useLedgerNameEditing = ({
 
     setSaving(true);
     try {
-      const { data } = await updateProcessedLedgerNames(importId, {
+      const updateFn = updateFunction || updateProcessedLedgerNames;
+      const response = await updateFn(importId, {
         rows: payloadRows,
       });
+      
+      if (!response || !response.data) {
+        throw new Error("Invalid response from server");
+      }
+      
+      const { data } = response;
       const processed = data?.processed || null;
+      
+      if (!processed) {
+        throw new Error("No processed data returned from server");
+      }
+      
       if (processed) {
         onUpdated?.(processed);
       }
-      const nextRows = processed?.processedRows || rows;
+      
+      // Get the correct rows from the response based on rowsKey
+      const nextRows = processed?.[rowsKey] || rows;
+      
+      if (!Array.isArray(nextRows)) {
+        console.error("nextRows is not an array:", nextRows, "rowsKey:", rowsKey, "processed:", processed);
+        throw new Error(`Invalid rows data returned for ${rowsKey}`);
+      }
+      
       const refreshedInputs = {};
       nextRows.forEach((row, idx) => {
         refreshedInputs[getRowKey(row, idx)] = normalizeValue(
@@ -118,10 +140,21 @@ const useLedgerNameEditing = ({
       savedMapRef.current = refreshedInputs;
       setDirtyRows(new Set());
       return processed;
+    } catch (error) {
+      console.error("Failed to persist ledger changes:", error);
+      console.error("Error details:", {
+        importId,
+        payloadRows,
+        rowsKey,
+        updateFunction: updateFunction?.name || "default",
+        errorMessage: error?.message,
+        errorResponse: error?.response?.data,
+      });
+      throw error; // Re-throw so component can handle it
     } finally {
       setSaving(false);
     }
-  }, [dirtyRows, importId, inputs, onUpdated, rowMeta, rows, getRowKey]);
+  }, [dirtyRows, importId, inputs, onUpdated, rowMeta, rows, getRowKey, updateFunction, rowsKey]);
 
   return {
     ledgerInputs: inputs,
