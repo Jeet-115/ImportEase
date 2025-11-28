@@ -277,6 +277,7 @@ const CompanyProcessor = () => {
   );
 
   const originalRowsCache = useRef({});
+  const importDocCache = useRef({});
 
   const [activeTab, setActiveTab] = useState("processed"); // "processed" or "reverseCharge"
 
@@ -897,6 +898,7 @@ const CompanyProcessor = () => {
       const { data } = await fetchImportById(importId);
       const rows = data?.rows || [];
       originalRowsCache.current[importId] = rows;
+      importDocCache.current[importId] = data || {};
       return rows;
     } catch (error) {
       console.error("Failed to load original GSTR-2B rows:", error);
@@ -1186,6 +1188,9 @@ const CompanyProcessor = () => {
         setSheetRows(data.rows || []);
         setGeneratedRows([]);
         setImportId(data._id || null);
+        if (data?._id) {
+          importDocCache.current[data._id] = data;
+        }
         setProcessedDoc(null);
         setStatus({
           type: "success",
@@ -1627,6 +1632,8 @@ const CompanyProcessor = () => {
       if (!doc) return;
 
       const originalRows = await getOriginalRows();
+      const restSheets =
+        importDocCache.current[importId]?.restSheets || [];
       const processedRowsClean = stripMetaFields(doc.processedRows || []);
       const mismatchedRowsClean = stripMetaFields(doc.mismatchedRows || []);
       const reverseChargeRowsClean = stripMetaFields(doc.reverseChargeRows || []);
@@ -1643,6 +1650,7 @@ const CompanyProcessor = () => {
         mismatchedRows: mismatchedRowsClean,
         reverseChargeRows: reverseChargeRowsClean,
         disallowRows: disallowRowsClean,
+        restSheets,
         normalizeAcceptCreditValue,
       });
 

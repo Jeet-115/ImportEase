@@ -165,6 +165,100 @@ export const parseB2BSheet = (workbook) => {
     });
 };
 
+const ADDITIONAL_HEADER_ROW_INDEX = 5;
+
+const formatGenericCell = (cell) => {
+  if (cell === null || cell === undefined) return null;
+  if (typeof cell === "number" && Number.isFinite(cell)) {
+    return cell;
+  }
+  if (cell instanceof Date && !Number.isNaN(cell.getTime())) {
+    return formatDisplayDate(cell);
+  }
+  const stringValue = String(cell).trim();
+  return stringValue.length ? stringValue : null;
+};
+
+const findHeaderRowIndex = (rows = []) => {
+  if (
+    rows.length > ADDITIONAL_HEADER_ROW_INDEX &&
+    !isRowEmpty(rows[ADDITIONAL_HEADER_ROW_INDEX])
+  ) {
+    return ADDITIONAL_HEADER_ROW_INDEX;
+  }
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    if (!isRowEmpty(rows[idx])) {
+      return idx;
+    }
+  }
+  return -1;
+};
+
+const parseAdditionalSheet = (sheet) => {
+  const rows = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: true,
+    defval: null,
+  });
+  if (!rows.length) {
+    return null;
+  }
+  const headerRowIndex = findHeaderRowIndex(rows);
+  if (headerRowIndex === -1) {
+    return null;
+  }
+  const headerRow = rows[headerRowIndex] || [];
+  const headers = headerRow.map((cell, idx) => {
+    const value = formatGenericCell(cell);
+    return value ?? `Column ${idx + 1}`;
+  });
+  const dataRows = rows
+    .slice(headerRowIndex + 1)
+    .map((row) => {
+      const record = {};
+      headers.forEach((header, idx) => {
+        if (!header) return;
+        const value = formatGenericCell(row[idx]);
+        record[header] =
+          value === null || value === undefined ? "" : value;
+      });
+      return record;
+    })
+    .filter((record) =>
+      Object.values(record).some(
+        (value) =>
+          value !== null &&
+          value !== undefined &&
+          String(value).trim().length > 0
+      )
+    );
+
+  return { headers, rows: dataRows };
+};
+
+const parseAdditionalSheets = (workbook) => {
+  const sheetNames = workbook.SheetNames || [];
+  const b2bIndex = sheetNames.findIndex(
+    (name = "") => name.toLowerCase() === "b2b"
+  );
+  if (b2bIndex === -1) return [];
+  const targetNames = sheetNames.slice(b2bIndex + 1);
+  const parsed = [];
+  targetNames.forEach((name) => {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) return;
+    const result = parseAdditionalSheet(sheet);
+    if (result) {
+      parsed.push({
+        sheetName: name,
+        headers: result.headers,
+        rows: result.rows,
+      });
+    }
+  });
+  return parsed;
+};
+
 const sanitizeLedgerUpdateRows = (rows = []) =>
   rows
     .map((row) => ({
@@ -243,12 +337,14 @@ export const importB2BSheet = async (req, res) => {
 
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const rows = parseB2BSheet(workbook);
+    const restSheets = parseAdditionalSheets(workbook);
 
     const document = await createGstrImport({
       company: companyId,
       companySnapshot: snapshot,
       sheetName: "B2B",
       rows,
+      restSheets,
       sourceFileName: req.file.originalname,
       uploadedAt: new Date(),
     });

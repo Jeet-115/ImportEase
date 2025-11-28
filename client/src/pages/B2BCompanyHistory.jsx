@@ -801,6 +801,7 @@ const B2BCompanyHistory = () => {
       }
       const importDoc = await ensureImportDoc(importId);
       const originalRows = importDoc?.rows || [];
+      const restSheets = importDoc?.restSheets || [];
       const processedRowsClean = stripMetaFields(doc.processedRows || []);
       const processedHeaders = processedRowsClean[0]
         ? extractVisibleColumns(processedRowsClean[0])
@@ -820,6 +821,7 @@ const B2BCompanyHistory = () => {
         mismatchedRows: mismatchedRowsClean,
         reverseChargeRows: reverseChargeRowsClean,
         disallowRows: disallowRowsClean,
+        restSheets,
         normalizeAcceptCreditValue,
       });
 

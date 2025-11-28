@@ -131,6 +131,7 @@ export const buildCombinedWorkbook = ({
   mismatchedRows = [],
   reverseChargeRows = [],
   disallowRows = [],
+  restSheets = [],
   normalizeAcceptCreditValue = (value) => value,
 }) => {
   const workbook = XLSX.utils.book_new();
@@ -575,8 +576,58 @@ export const buildCombinedWorkbook = ({
   const disallowHeaders = disallowRows[0] ? Object.keys(disallowRows[0]) : [];
   const disallowHeadersWithColumns = ensureColumnsInHeaders(disallowHeaders, ["Action", "Action Reason"]);
   const disallowHeadersOrdered = reorderSheetHeaders(disallowHeadersWithColumns, ["Action", "Action Reason"]);
-  const disallowSheet = createSheetFromRows(disallowRows, disallowHeadersOrdered);
+  const disallowSheet = createSheetFromRows(
+    disallowRows,
+    disallowHeadersOrdered
+  );
   XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
+
+  if (restSheets?.length) {
+    const restData = [];
+    restSheets.forEach(({ sheetName, headers = [], rows = [] }) => {
+      const normalizedHeaders =
+        headers.length > 0
+          ? headers
+          : rows.length > 0
+          ? Object.keys(rows[0])
+          : [];
+      restData.push([sheetName || "Sheet"]);
+      if (normalizedHeaders.length) {
+        restData.push(normalizedHeaders);
+      } else {
+        restData.push(["No headers detected"]);
+      }
+      if (rows.length) {
+        rows.forEach((row) => {
+          if (normalizedHeaders.length) {
+            restData.push(
+              normalizedHeaders.map((header) => {
+                const value = row?.[header];
+                return value === null || value === undefined ? "" : value;
+              })
+            );
+          } else {
+            const values = Object.values(row || {});
+            restData.push(values.length ? values : [""]);
+          }
+        });
+      } else {
+        restData.push(["No data available"]);
+      }
+      restData.push([]);
+      restData.push([]);
+    });
+    if (restData.length) {
+      while (
+        restData.length &&
+        restData[restData.length - 1].length === 0
+      ) {
+        restData.pop();
+      }
+      const restSheet = XLSX.utils.aoa_to_sheet(restData);
+      XLSX.utils.book_append_sheet(workbook, restSheet, "Rest Sheets");
+    }
+  }
 
   return workbook;
 };
