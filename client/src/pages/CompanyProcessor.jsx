@@ -30,6 +30,10 @@ import { fetchPartyMasters } from "../services/partymasterservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import { buildCombinedWorkbook } from "../utils/buildCombinedWorkbook";
+import {
+  buildActionJsonPayload,
+  downloadJsonFile,
+} from "../utils/actionJsonBuilder";
 import BackButton from "../components/BackButton";
 import LedgerNameDropdown from "../components/LedgerNameDropdown";
 import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
@@ -400,6 +404,7 @@ const CompanyProcessor = () => {
     },
     [actionDrafts]
   );
+
 
   const isAcceptDirtyForRow = useCallback(
     (rowKey) => {
@@ -1661,6 +1666,74 @@ const CompanyProcessor = () => {
     }
   };
 
+  const handleDownloadActionJson = useCallback(async () => {
+    if (!processedDoc) {
+      setStatus({
+        type: "error",
+        message: "Process the sheet before downloading the action JSON.",
+      });
+      return;
+    }
+    try {
+      const originalRows = await getOriginalRows();
+      const rowGroups = [
+        { rows: processedDoc.processedRows || [] },
+        { rows: processedDoc.reverseChargeRows || [] },
+        { rows: processedDoc.mismatchedRows || [] },
+        {
+          rows:
+            processedDoc.disallowRows?.length > 0
+              ? processedDoc.disallowRows
+              : filterDisallowRows(processedDoc.processedRows || []),
+        },
+      ];
+
+      const payload = buildActionJsonPayload({
+        rowGroups,
+        getRowKey,
+        getActionValue: (row, rowKey) => getActionValueForRow(row, rowKey),
+        originalRows,
+        companyGstin:
+          processedDoc.companySnapshot?.gstin ||
+          company?.gstin ||
+          processedDoc.company ||
+          "",
+      });
+
+      if (!payload.invdata.b2b.length) {
+        setStatus({
+          type: "error",
+          message: "No rows with Accept/Reject/Pending actions to export.",
+        });
+        return;
+      }
+
+      const filename = `${sanitizeFileName(
+        processedDoc.company || company?.companyName || "company"
+      )}-actions.json`;
+      downloadJsonFile(payload, filename);
+      setStatus({
+        type: "success",
+        message: "Action JSON downloaded.",
+      });
+    } catch (error) {
+      console.error("Failed to download action JSON:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.message || "Unable to download action JSON. Please try again.",
+      });
+    }
+  }, [
+    company?.companyName,
+    company?.gstin,
+    getActionValueForRow,
+    getOriginalRows,
+    getRowKey,
+    processedDoc,
+    setStatus,
+  ]);
+
   const handleProcessSheet = () => {
     if (!importId) {
       setStatus({
@@ -1860,6 +1933,14 @@ const CompanyProcessor = () => {
               >
                 <FiDownload />
                 Combined Excel (All Sheets)
+              </button>
+              <button
+                onClick={handleDownloadActionJson}
+                disabled={!downloadsUnlocked}
+                className="inline-flex items-center gap-2 rounded-full bg-slate-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <FiDownload />
+                Action JSON
               </button>
               <button
                 onClick={handleProcessSheet}

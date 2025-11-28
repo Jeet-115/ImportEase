@@ -33,6 +33,10 @@ import {
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import { buildCombinedWorkbook } from "../utils/buildCombinedWorkbook";
+import {
+  buildActionJsonPayload,
+  downloadJsonFile,
+} from "../utils/actionJsonBuilder";
 import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
 
 const shouldHideColumn = (key = "") => key.startsWith("_");
@@ -834,6 +838,67 @@ const B2BCompanyHistory = () => {
     }
   };
 
+  const downloadActionJson = async (importId) => {
+    try {
+      const processed = await ensureProcessedDoc(importId);
+      if (!processed) {
+        setStatus({
+          type: "error",
+          message: "No processed data found for this import.",
+        });
+        return;
+      }
+      const importDoc = await ensureImportDoc(importId);
+      const originalRows = importDoc?.rows || [];
+      const rowGroups = [
+        { rows: processed.processedRows || [] },
+        { rows: processed.reverseChargeRows || [] },
+        { rows: processed.mismatchedRows || [] },
+        {
+          rows:
+            processed.disallowRows?.length > 0
+              ? processed.disallowRows
+              : filterDisallowRows(processed.processedRows || []),
+        },
+      ];
+
+      const payload = buildActionJsonPayload({
+        rowGroups,
+        getRowKey: getProcessedRowKey,
+        getActionValue: (row) => normalizeActionValue(row?.Action ?? ""),
+        originalRows,
+        companyGstin:
+          processed.companySnapshot?.gstin ||
+          processed.company ||
+          company?.gstin ||
+          "",
+      });
+
+      if (!payload.invdata.b2b.length) {
+        setStatus({
+          type: "error",
+          message: "No rows with Accept/Reject/Pending actions to export.",
+        });
+        return;
+      }
+
+      const filename = `${sanitizeFileName(
+        processed.company || company?.companyName || "company"
+      )}-actions.json`;
+      downloadJsonFile(payload, filename);
+      setStatus({
+        type: "success",
+        message: "Action JSON downloaded.",
+      });
+    } catch (error) {
+      console.error("Failed to download action JSON:", error);
+      setStatus({
+        type: "error",
+        message: error?.message || "Unable to download action JSON.",
+      });
+    }
+  };
+
   const openProcessedPreview = async (
     importId,
     mismatched = false,
@@ -1133,6 +1198,12 @@ const B2BCompanyHistory = () => {
                             className="inline-flex items-center gap-1 rounded-full border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                           >
                             <FiDownload /> Combined Excel
+                          </button>
+                          <button
+                            onClick={() => downloadActionJson(imp._id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            <FiDownload /> Action JSON
                           </button>
 
                           {/* 4. Processed download & view */}
