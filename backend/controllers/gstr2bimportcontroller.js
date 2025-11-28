@@ -148,6 +148,8 @@ export const parseB2BSheet = (workbook) => {
         const cell = row[index];
         if (key === "invoiceDate") {
           entry[key] = formatDisplayDate(cell);
+        } else if (key === "gstrFilingDate") {
+          entry[key] = formatDisplayDate(cell);
         } else if (key === "taxRatePercent") {
           entry[key] = parseTaxRatePercent(cell);
         } else if (type === "number") {

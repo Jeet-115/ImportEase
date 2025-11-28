@@ -53,6 +53,24 @@ const parseNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const formatDisplayDate = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) {
+    const dd = String(value.getDate()).padStart(2, "0");
+    const mm = String(value.getMonth() + 1).padStart(2, "0");
+    return `${dd}/${mm}/${value.getFullYear()}`;
+  }
+  const stringValue = String(value).trim();
+  if (!stringValue) return null;
+  const parsed = new Date(stringValue);
+  if (!Number.isNaN(parsed.getTime())) {
+    const dd = String(parsed.getDate()).padStart(2, "0");
+    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+    return `${dd}/${mm}/${parsed.getFullYear()}`;
+  }
+  return stringValue;
+};
+
 const formatDate = (value) => {
   if (!value) return null;
   const date = new Date(value);
@@ -177,6 +195,7 @@ const processRowWithMap = (row, index, gstStateMap, reverseChargeLabel = null) =
     supplierAmount: null,
     supplierDrCr: "CR",
     "Reverse Supply Charge": reverseChargeLabel,
+    "GSTR-1/1A/IFF/GSTR-5 Filing Date": formatDisplayDate(row?.gstrFilingDate),
     "GSTR-2B Invoice Value": invoiceValue || null,
     "GSTR-2B Taxable Value": taxableValue || null,
     [LEDGER_NAME_COLUMN]: null,
