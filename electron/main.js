@@ -190,6 +190,22 @@ const createMainWindow = async () => {
     mainWindow = null;
   });
 
+  mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    const label = ["log", "warn", "error"][level] || "log";
+    console[label](
+      `[renderer] ${message}${sourceId ? ` (${sourceId}:${line ?? "?"})` : ""}`,
+    );
+  });
+
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    console.error(
+      "[renderer] Failed to load URL",
+      validatedURL,
+      errorCode,
+      errorDescription,
+    );
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
     shell.openExternal(targetUrl);
     return { action: "deny" };

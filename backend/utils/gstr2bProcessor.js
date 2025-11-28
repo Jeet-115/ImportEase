@@ -112,7 +112,39 @@ const buildStateMap = async () => {
   return cachedStateMap;
 };
 
-const processRowWithMap = (row, index, gstStateMap) => {
+const interpretReverseChargeValue = (value) => {
+  if (value === null || value === undefined) {
+    return { isReverseCharge: false, displayValue: null };
+  }
+
+  const trimmed = String(value).trim();
+  if (!trimmed) {
+    return { isReverseCharge: false, displayValue: null };
+  }
+
+  const normalized = trimmed.toLowerCase();
+  const truthy =
+    normalized === "yes" ||
+    normalized === "y" ||
+    normalized === "1" ||
+    normalized === "true" ||
+    value === true ||
+    value === 1;
+  const falsy =
+    normalized === "no" ||
+    normalized === "n" ||
+    normalized === "0" ||
+    normalized === "false" ||
+    value === false ||
+    value === 0;
+
+  return {
+    isReverseCharge: truthy,
+    displayValue: truthy ? "Yes" : falsy ? "No" : trimmed,
+  };
+};
+
+const processRowWithMap = (row, index, gstStateMap, reverseChargeLabel = null) => {
   const gstin = (row?.gstin || "").trim();
   const stateCode = gstin.slice(0, 2);
   const state = gstStateMap.get(stateCode) || null;
@@ -122,6 +154,7 @@ const processRowWithMap = (row, index, gstStateMap) => {
   const igst = parseNumber(row?.igst);
   const cgst = parseNumber(row?.cgst);
   const sgst = parseNumber(row?.sgst);
+  const cess = parseNumber(row?.cess);
 
   const rawInvoiceDate =
     row?.invoiceDate !== undefined && row?.invoiceDate !== null
@@ -129,6 +162,7 @@ const processRowWithMap = (row, index, gstStateMap) => {
       : null;
 
   const base = {
+    _sourceRowId: index,
     slNo: index + 1,
     date: rawInvoiceDate,
     vchNo: row?.invoiceNumber || null,
@@ -142,13 +176,24 @@ const processRowWithMap = (row, index, gstStateMap) => {
     supplierState: row?.placeOfSupply || null,
     supplierAmount: null,
     supplierDrCr: "CR",
+    "Reverse Supply Charge": reverseChargeLabel,
+    "GSTR-2B Invoice Value": invoiceValue || null,
+    "GSTR-2B Taxable Value": taxableValue || null,
     [LEDGER_NAME_COLUMN]: null,
     ...initializeLedgerFields(),
+    "Custom Ledger Amount": null,
+    "Custom Ledger DR/CR": null,
+    "Custom IGST Rate": null,
+    "Custom CGST Rate": null,
+    "Custom SGST/UTGST": null,
+    "Cess": cess || null,
     groAmount: null,
     roundOffDr: null,
     roundOffCr: null,
     invoiceAmount: null,
     changeMode: "Accounting Invoice",
+    Action: null,
+    "Action Reason": null,
   };
 
   const slab = determineSlab(taxableValue, igst, cgst);
@@ -156,6 +201,7 @@ const processRowWithMap = (row, index, gstStateMap) => {
   let igstApplied = igst;
   let cgstApplied = cgst;
   let sgstApplied = sgst;
+  let cessApplied = cess;
 
   let isMismatched = false;
 
@@ -174,12 +220,23 @@ const processRowWithMap = (row, index, gstStateMap) => {
       igstApplied = 0;
     }
   } else {
-    ledgerAmount = invoiceValue || taxableValue;
+    ledgerAmount = taxableValue || invoiceValue;
     isMismatched = true;
+    const customLedgerAmount = taxableValue || invoiceValue || null;
+    base["Custom Ledger Amount"] =
+      customLedgerAmount !== undefined ? customLedgerAmount : null;
+    base["Custom Ledger DR/CR"] = customLedgerAmount ? "DR" : null;
+    base["Custom IGST Rate"] = igstApplied ? igstApplied : null;
+    base["Custom CGST Rate"] = cgstApplied ? cgstApplied : null;
+    base["Custom SGST/UTGST"] = sgstApplied ? sgstApplied : null;
   }
 
+  // For non-RCM rows, include CESS in gross amount calculation
+  const isReverseCharge = reverseChargeLabel === "Yes";
   const groAmount = parseFloat(
-    ((ledgerAmount || 0) + igstApplied + cgstApplied + sgstApplied).toFixed(2)
+    isReverseCharge
+      ? ((ledgerAmount || 0) + igstApplied + cgstApplied + sgstApplied).toFixed(2)
+      : ((ledgerAmount || 0) + igstApplied + cgstApplied + sgstApplied + cessApplied).toFixed(2)
   );
 
   let roundOffDr = 0;
@@ -202,59 +259,60 @@ const processRowWithMap = (row, index, gstStateMap) => {
   base.roundOffDr = roundOffDr || null;
   base.roundOffCr = roundOffCr || null;
   base.invoiceAmount = invoiceAmount;
-  base.supplierAmount = invoiceAmount;
+  
+  // For reverse charge rows, supplier amount should equal taxable value from GSTR-2B sheet
+  if (isReverseCharge) {
+    // Use taxable value directly from the GSTR-2B sheet
+    base.supplierAmount = taxableValue && Number.isFinite(taxableValue) 
+      ? parseFloat(Number(taxableValue).toFixed(2)) 
+      : invoiceAmount;
+  } else {
+    base.supplierAmount = invoiceAmount;
+  }
 
   return { record: base, isMismatched };
 };
 
 export const processRows = async (rows) => {
   const gstStateMap = await buildStateMap();
-  const matchedRows = [];
+  const processedRows = [];
   const mismatchedRows = [];
   const reverseChargeRows = [];
 
-  let reverseChargeCount = 0;
   rows.forEach((row, index) => {
     // Check if this row has reverse charge = "yes"
     // Handle various formats: "yes", "Yes", "YES", "Y", "1", true, etc.
-    const reverseChargeValue = row?.reverseCharge;
-    let isReverseCharge = false;
-    
-    if (reverseChargeValue !== null && reverseChargeValue !== undefined) {
-      const normalized = String(reverseChargeValue).trim().toLowerCase();
-      // Check for "yes", "y", "1", or boolean true
-      isReverseCharge = 
-        normalized === "yes" || 
-        normalized === "y" || 
-        normalized === "1" ||
-        normalized === "true" ||
-        reverseChargeValue === true ||
-        reverseChargeValue === 1;
-      
-      // Debug: log first few reverse charge values to verify
-      if (index < 5) {
-        console.log(`Row ${index}: reverseChargeValue="${reverseChargeValue}", normalized="${normalized}", isReverseCharge=${isReverseCharge}`);
-      }
+    const { isReverseCharge, displayValue: reverseChargeLabel } =
+      interpretReverseChargeValue(row?.reverseCharge);
+    if (
+      index < 5 &&
+      row?.reverseCharge !== undefined &&
+      row?.reverseCharge !== null
+    ) {
+      console.log(
+        `Row ${index}: reverseChargeValue="${row?.reverseCharge}", interpreted="${reverseChargeLabel}", isReverseCharge=${isReverseCharge}`
+      );
     }
 
     const { record, isMismatched } = processRowWithMap(
       row,
       index,
-      gstStateMap
+      gstStateMap,
+      reverseChargeLabel
     );
 
-    // If reverse charge, add to reverseChargeRows and skip adding to matched/mismatched
+    processedRows.push(record);
+    if (isMismatched) {
+      mismatchedRows.push(record);
+    }
     if (isReverseCharge) {
       reverseChargeRows.push(record);
-      reverseChargeCount++;
-    } else if (isMismatched) {
-      mismatchedRows.push(record);
-    } else {
-      matchedRows.push(record);
     }
   });
   
-  console.log(`Processing complete: ${reverseChargeRows.length} reverse charge rows, ${matchedRows.length} matched rows, ${mismatchedRows.length} mismatched rows`);
+  console.log(
+    `Processing complete: ${reverseChargeRows.length} reverse charge rows, ${processedRows.length} processed rows (including mismatches), ${mismatchedRows.length} mismatched rows`
+  );
 
   const renumber = (list) =>
     list.map((entry, idx) => ({
@@ -263,7 +321,7 @@ export const processRows = async (rows) => {
     }));
 
   return {
-    matchedRows: renumber(matchedRows),
+    processedRows: renumber(processedRows),
     mismatchedRows: renumber(mismatchedRows),
     reverseChargeRows: renumber(reverseChargeRows),
   };
@@ -274,13 +332,14 @@ export const processAndStoreDocument = async (doc) => {
   const rows = Array.isArray(doc.rows) ? doc.rows : [];
   if (!rows.length) return null;
 
-  const { matchedRows, mismatchedRows, reverseChargeRows } = await processRows(rows);
+  const { processedRows, mismatchedRows, reverseChargeRows } =
+    await processRows(rows);
 
   const payload = {
     _id: doc._id,
     company: doc.companySnapshot?.companyName || "Unknown",
     companySnapshot: doc.companySnapshot || {},
-    processedRows: matchedRows,
+    processedRows,
     mismatchedRows,
     reverseChargeRows: reverseChargeRows || [],
     disallowRows: Array.isArray(doc.disallowRows) ? doc.disallowRows : [],

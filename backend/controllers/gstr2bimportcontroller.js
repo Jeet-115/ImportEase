@@ -9,6 +9,8 @@ import {
   findById as findProcessedById,
   updateLedgerNames as updateProcessedLedgerNamesById,
   updateReverseChargeLedgerNames as updateReverseChargeLedgerNamesById,
+  updateMismatchedLedgerNames as updateMismatchedLedgerNamesById,
+  updateDisallowLedgerNames as updateDisallowLedgerNamesById,
 } from "../models/processedfilemodel.js";
 import { processAndStoreDocument } from "../utils/gstr2bProcessor.js";
 
@@ -67,11 +69,26 @@ export const parseNumber = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const normalized =
     typeof value === "string"
-      ? value.replace(/,/g, "").trim()
+      ? value.replace(/,/g, "").replace(/%/g, "").trim()
       : Number(value);
   const parsed =
     typeof normalized === "number" ? normalized : Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const parseTaxRatePercent = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = parseNumber(value);
+  if (parsed === null) return null;
+
+  const isPercentFormattedNumber =
+    typeof value === "number" && Math.abs(value) <= 1;
+
+  if (isPercentFormattedNumber) {
+    return Number((parsed * 100).toFixed(2));
+  }
+
+  return parsed;
 };
 
 export const parseDate = (value) => {
@@ -131,6 +148,8 @@ export const parseB2BSheet = (workbook) => {
         const cell = row[index];
         if (key === "invoiceDate") {
           entry[key] = formatDisplayDate(cell);
+        } else if (key === "taxRatePercent") {
+          entry[key] = parseTaxRatePercent(cell);
         } else if (type === "number") {
           entry[key] = parseNumber(cell);
         } else if (type === "date") {
@@ -143,6 +162,51 @@ export const parseB2BSheet = (workbook) => {
       return entry;
     });
 };
+
+const sanitizeLedgerUpdateRows = (rows = []) =>
+  rows
+    .map((row) => ({
+      slNo:
+        row?.slNo !== undefined && row?.slNo !== null
+          ? Number(row.slNo)
+          : undefined,
+      index:
+        row?.index !== undefined && row?.index !== null
+          ? Number(row.index)
+          : undefined,
+      ledgerName:
+        typeof row?.ledgerName === "string" ? row.ledgerName : row?.ledgerName,
+      acceptCredit:
+        Object.prototype.hasOwnProperty.call(row ?? {}, "acceptCredit") ||
+        Object.prototype.hasOwnProperty.call(row ?? {}, "accept_credit")
+          ? row.acceptCredit ?? row.accept_credit ?? null
+          : undefined,
+      action:
+        Object.prototype.hasOwnProperty.call(row ?? {}, "action") ||
+        Object.prototype.hasOwnProperty.call(row ?? {}, "Action")
+          ? row.action ?? row.Action ?? null
+          : undefined,
+      actionReason:
+        Object.prototype.hasOwnProperty.call(row ?? {}, "actionReason") ||
+        Object.prototype.hasOwnProperty.call(row ?? {}, "action_reason") ||
+        Object.prototype.hasOwnProperty.call(row ?? {}, "Action Reason")
+          ? (() => {
+              const raw =
+                row.actionReason ??
+                row.action_reason ??
+                row["Action Reason"] ??
+                null;
+              if (raw === undefined || raw === null) return null;
+              const trimmed = sanitizeString(raw);
+              return trimmed ? trimmed : null;
+            })()
+          : undefined,
+    }))
+    .filter(
+      (row) =>
+        (row.slNo !== undefined && !Number.isNaN(row.slNo)) ||
+        (row.index !== undefined && !Number.isNaN(row.index))
+    );
 
 export const uploadMiddleware = upload.single("file");
 
@@ -281,24 +345,7 @@ export const updateProcessedLedgerNames = async (req, res) => {
       return res.status(400).json({ message: "rows payload is required." });
     }
 
-    const sanitized = rows
-      .map((row) => ({
-        slNo:
-          row?.slNo !== undefined && row?.slNo !== null
-            ? Number(row.slNo)
-            : undefined,
-        index:
-          row?.index !== undefined && row?.index !== null
-            ? Number(row.index)
-            : undefined,
-        ledgerName:
-          typeof row?.ledgerName === "string" ? row.ledgerName : row?.ledgerName,
-      }))
-      .filter(
-        (row) =>
-          (row.slNo !== undefined && !Number.isNaN(row.slNo)) ||
-          (row.index !== undefined && !Number.isNaN(row.index))
-      );
+    const sanitized = sanitizeLedgerUpdateRows(rows);
 
     if (!sanitized.length) {
       return res
@@ -330,24 +377,7 @@ export const updateReverseChargeLedgerNames = async (req, res) => {
       return res.status(400).json({ message: "rows payload is required." });
     }
 
-    const sanitized = rows
-      .map((row) => ({
-        slNo:
-          row?.slNo !== undefined && row?.slNo !== null
-            ? Number(row.slNo)
-            : undefined,
-        index:
-          row?.index !== undefined && row?.index !== null
-            ? Number(row.index)
-            : undefined,
-        ledgerName:
-          typeof row?.ledgerName === "string" ? row.ledgerName : row?.ledgerName,
-      }))
-      .filter(
-        (row) =>
-          (row.slNo !== undefined && !Number.isNaN(row.slNo)) ||
-          (row.index !== undefined && !Number.isNaN(row.index))
-      );
+    const sanitized = sanitizeLedgerUpdateRows(rows);
 
     if (!sanitized.length) {
       return res
@@ -382,6 +412,76 @@ export const updateReverseChargeLedgerNames = async (req, res) => {
     console.error("updateReverseChargeLedgerNames Error:", error);
     return res.status(500).json({
       message: error.message || "Failed to update reverse charge ledger names.",
+    });
+  }
+};
+
+export const updateMismatchedLedgerNames = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) {
+      return res.status(400).json({ message: "rows payload is required." });
+    }
+
+    const sanitized = sanitizeLedgerUpdateRows(rows);
+    if (!sanitized.length) {
+      return res
+        .status(400)
+        .json({ message: "rows payload is invalid or empty." });
+    }
+
+    const updated = await updateMismatchedLedgerNamesById(id, sanitized);
+    if (!updated) {
+      return res.status(404).json({
+        message:
+          "Processed file not found or no mismatched rows available.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Mismatched ledger names updated.",
+      processed: updated,
+    });
+  } catch (error) {
+    console.error("updateMismatchedLedgerNames Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to update mismatched ledger names.",
+    });
+  }
+};
+
+export const updateDisallowLedgerNames = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) {
+      return res.status(400).json({ message: "rows payload is required." });
+    }
+
+    const sanitized = sanitizeLedgerUpdateRows(rows);
+    if (!sanitized.length) {
+      return res
+        .status(400)
+        .json({ message: "rows payload is invalid or empty." });
+    }
+
+    const updated = await updateDisallowLedgerNamesById(id, sanitized);
+    if (!updated) {
+      return res.status(404).json({
+        message:
+          "Processed file not found or no disallow rows available.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Disallow ledger names updated.",
+      processed: updated,
+    });
+  } catch (error) {
+    console.error("updateDisallowLedgerNames Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to update disallow ledger names.",
     });
   }
 };

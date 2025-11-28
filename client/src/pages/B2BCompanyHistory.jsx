@@ -13,7 +13,7 @@ import {
   FiSave,
 } from "react-icons/fi";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import BackButton from "../components/BackButton";
 import ExcelPreviewModal from "../components/ExcelPreviewModal.jsx";
 import LedgerNameDropdown from "../components/LedgerNameDropdown";
@@ -23,6 +23,8 @@ import {
   fetchImportsByCompany,
   fetchProcessedFile,
   updateReverseChargeLedgerNames,
+  updateMismatchedLedgerNames,
+  updateDisallowLedgerNames,
 } from "../services/gstr2bservice";
 import {
   createLedgerName as createLedgerNameApi,
@@ -30,7 +32,19 @@ import {
 } from "../services/ledgernameservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
+import { buildCombinedWorkbook } from "../utils/buildCombinedWorkbook";
 import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
+
+const shouldHideColumn = (key = "") => key.startsWith("_");
+const extractVisibleColumns = (row = {}) =>
+  Object.keys(row || {}).filter((key) => !shouldHideColumn(key));
+const stripMetaFields = (rows = []) =>
+  rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    return Object.fromEntries(
+      Object.entries(row).filter(([key]) => !shouldHideColumn(key))
+    );
+  });
 
 const toDisplayValue = (value) => {
   if (value === null || value === undefined) return "";
@@ -55,6 +69,29 @@ const filterDisallowRows = (rows) => {
     const ledgerName = String(row?.["Ledger Name"] || "").trim();
     return DISALLOW_LEDGER_NAMES.includes(ledgerName);
   });
+};
+
+const ACTION_OPTIONS = ["Accept", "Reject", "Pending"];
+
+const normalizeActionValue = (value) => {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "accept") return "Accept";
+  if (lower === "reject") return "Reject";
+  if (lower === "pending") return "Pending";
+  return null;
+};
+
+const normalizeAcceptCreditValue = (value) => {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "yes" || lower === "y") return "Yes";
+  if (lower === "no" || lower === "n") return "No";
+  return null;
 };
 
 const B2BCompanyHistory = () => {
@@ -88,6 +125,22 @@ const B2BCompanyHistory = () => {
     importId: null,
     activeTab: "processed", // "processed" or "reverseCharge"
   });
+  const [modalAcceptCreditDrafts, setModalAcceptCreditDrafts] = useState({});
+  const [modalActionDrafts, setModalActionDrafts] = useState({});
+  const [modalActionReasonDrafts, setModalActionReasonDrafts] = useState({});
+
+  const buildDownloadFilename = useCallback(
+    (type, overrideName) => {
+      const baseName = sanitizeFileName(
+        overrideName || company?.companyName || "company"
+      );
+      const now = new Date();
+      const month = now.toLocaleString("en-US", { month: "short" });
+      const year = now.getFullYear();
+      return `${baseName}-${type}-${month}-${year}`;
+    },
+    [company]
+  );
 
   useEffect(() => {
     if (!company) {
@@ -143,6 +196,14 @@ const B2BCompanyHistory = () => {
     loadLedgerNames();
   }, [loadLedgerNames]);
 
+  useEffect(() => {
+    if (!ledgerModal.open || !ledgerModal.importId) {
+      setModalAcceptCreditDrafts({});
+      setModalActionDrafts({});
+      setModalActionReasonDrafts({});
+    }
+  }, [ledgerModal.open, ledgerModal.importId]);
+
   const ensureImportDoc = async (importId) => {
     if (importCache[importId]) return importCache[importId];
     const { data } = await fetchImportById(importId);
@@ -181,18 +242,139 @@ const B2BCompanyHistory = () => {
     () => ledgerModal.processed?.reverseChargeRows || [],
     [ledgerModal.processed]
   );
+  const ledgerModalMismatchedRows = useMemo(
+    () => ledgerModal.processed?.mismatchedRows || [],
+    [ledgerModal.processed]
+  );
+  const ledgerModalDisallowRows = useMemo(
+    () =>
+      ledgerModal.processed?.disallowRows?.length
+        ? ledgerModal.processed.disallowRows
+        : filterDisallowRows(ledgerModal.processed?.processedRows || []),
+    [ledgerModal.processed]
+  );
   const ledgerModalRows = useMemo(
-    () => ledgerModal.activeTab === "processed" 
-      ? ledgerModalProcessedRows 
-      : ledgerModalReverseChargeRows,
-    [ledgerModal.activeTab, ledgerModalProcessedRows, ledgerModalReverseChargeRows]
+    () => {
+      switch (ledgerModal.activeTab) {
+        case "reverseCharge":
+          return ledgerModalReverseChargeRows;
+        case "mismatched":
+          return ledgerModalMismatchedRows;
+        case "disallow":
+          return ledgerModalDisallowRows;
+        default:
+          return ledgerModalProcessedRows;
+      }
+    },
+    [
+      ledgerModal.activeTab,
+      ledgerModalProcessedRows,
+      ledgerModalReverseChargeRows,
+      ledgerModalMismatchedRows,
+      ledgerModalDisallowRows,
+    ]
   );
-  const ledgerModalColumns = useMemo(
-    () => (ledgerModalRows[0] ? Object.keys(ledgerModalRows[0]) : []),
-    [ledgerModalRows]
-  );
+  const ledgerModalUpdateMap = {
+    processed: undefined,
+    reverseCharge: updateReverseChargeLedgerNames,
+    mismatched: updateMismatchedLedgerNames,
+    disallow: updateDisallowLedgerNames,
+  };
+  const ledgerModalRowsKeyMap = {
+    processed: "processedRows",
+    reverseCharge: "reverseChargeRows",
+    mismatched: "mismatchedRows",
+    disallow: "disallowRows",
+  };
   const hasLedgerModalRows = ledgerModalRows.length > 0;
   const hasReverseChargeRows = ledgerModalReverseChargeRows.length > 0;
+  const hasMismatchedRows = ledgerModalMismatchedRows.length > 0;
+  const hasDisallowRows = ledgerModalDisallowRows.length > 0;
+  const isMismatchedModal = ledgerModal.activeTab === "mismatched";
+  const ledgerModalRowMap = useMemo(() => {
+    const map = new Map();
+    ledgerModalRows.forEach((row, idx) => {
+      map.set(getProcessedRowKey(row, idx), row);
+    });
+    return map;
+  }, [ledgerModalRows, getProcessedRowKey]);
+
+  const getModalActionValueForRow = useCallback(
+    (row, rowKey) => {
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        modalActionDrafts,
+        rowKey
+      );
+      const draftValue = hasDraft ? modalActionDrafts[rowKey] : undefined;
+      const sourceValue =
+        draftValue !== undefined ? draftValue : row?.Action ?? "";
+      return normalizeActionValue(sourceValue);
+    },
+    [modalActionDrafts]
+  );
+  const renderModalAcceptCreditBadge = useCallback((value) => {
+    if (!value) {
+      return <span className="text-slate-400">—</span>;
+    }
+    const normalized = String(value).trim().toLowerCase();
+    const isYes = normalized === "yes";
+    const badgeClasses = isYes
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : "bg-rose-50 text-rose-700 border-rose-200";
+    return (
+      <span
+        className={`inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClasses}`}
+      >
+        {value}
+      </span>
+    );
+  }, []);
+
+  const ledgerModalTabConfigs = [
+    {
+      key: "processed",
+      label: `Processed Rows (${ledgerModalProcessedRows.length})`,
+      enabled: ledgerModalProcessedRows.length > 0,
+      activeClass: "border-amber-500 text-amber-700",
+    },
+    {
+      key: "reverseCharge",
+      label: `Reverse Charge Rows (${ledgerModalReverseChargeRows.length})`,
+      enabled: hasReverseChargeRows,
+      activeClass: "border-purple-500 text-purple-700",
+    },
+    {
+      key: "mismatched",
+      label: `Mismatched Rows (${ledgerModalMismatchedRows.length})`,
+      enabled: hasMismatchedRows,
+      activeClass: "border-orange-500 text-orange-700",
+    },
+    {
+      key: "disallow",
+      label: `Disallow Rows (${ledgerModalDisallowRows.length})`,
+      enabled: hasDisallowRows,
+      activeClass: "border-red-500 text-red-700",
+    },
+  ];
+  const ledgerModalColumns = useMemo(() => {
+    const base = ledgerModalRows[0]
+      ? extractVisibleColumns(ledgerModalRows[0])
+      : [];
+    const columns = [...base];
+    if (
+      ledgerModal.activeTab === "mismatched" &&
+      !columns.includes("Accept Credit")
+    ) {
+      columns.push("Accept Credit");
+    }
+    if (!columns.includes("Action")) {
+      columns.push("Action");
+    }
+    if (!columns.includes("Action Reason")) {
+      columns.push("Action Reason");
+    }
+    return columns;
+  }, [ledgerModalRows, ledgerModal.activeTab]);
   
   const {
     ledgerInputs: modalLedgerInputs,
@@ -200,16 +382,42 @@ const B2BCompanyHistory = () => {
     dirtyCount: modalDirtyCount,
     persistLedgerChanges: persistLedgerChangesModal,
     savingLedgerChanges: modalSavingLedgerChanges,
+    setExtraRowDirtyState: setModalAcceptDirtyState,
   } = useLedgerNameEditing({
     rows: ledgerModalRows,
     importId: ledgerModal.importId,
     getRowKey: getProcessedRowKey,
-    updateFunction: ledgerModal.activeTab === "reverseCharge" 
-      ? updateReverseChargeLedgerNames 
-      : undefined,
-    rowsKey: ledgerModal.activeTab === "reverseCharge" 
-      ? "reverseChargeRows" 
-      : "processedRows",
+    updateFunction: ledgerModalUpdateMap[ledgerModal.activeTab],
+    rowsKey: ledgerModalRowsKeyMap[ledgerModal.activeTab] || "processedRows",
+    getRowPayload: (row, rowKey) => {
+      if (!row) return {};
+      const payload = {
+        action: getModalActionValueForRow(row, rowKey),
+      };
+      // Add Action Reason if Action is Reject or Pending
+      const actionValue = getModalActionValueForRow(row, rowKey);
+      if (actionValue === "Reject" || actionValue === "Pending") {
+        const hasDraft = Object.prototype.hasOwnProperty.call(
+          modalActionReasonDrafts,
+          rowKey
+        );
+        const draftValue = hasDraft ? modalActionReasonDrafts[rowKey] : undefined;
+        const sourceValue =
+          draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+        payload.actionReason = sourceValue || null;
+      }
+      if (ledgerModal.activeTab === "mismatched") {
+        const hasDraft = Object.prototype.hasOwnProperty.call(
+          modalAcceptCreditDrafts,
+          rowKey
+        );
+        const draftValue = hasDraft ? modalAcceptCreditDrafts[rowKey] : undefined;
+        const sourceValue =
+          draftValue !== undefined ? draftValue : row?.["Accept Credit"] ?? "";
+        payload.acceptCredit = normalizeAcceptCreditValue(sourceValue);
+      }
+      return payload;
+    },
     onUpdated: (updated) => {
       if (!updated || !ledgerModal.importId) return;
       setProcessedCache((prev) => ({
@@ -217,8 +425,158 @@ const B2BCompanyHistory = () => {
         [ledgerModal.importId]: updated,
       }));
       setLedgerModal((prev) => ({ ...prev, processed: updated }));
+      setModalAcceptCreditDrafts({});
+      setModalActionDrafts({});
+      setModalActionReasonDrafts({});
     },
   });
+
+  const isModalActionDirtyForRow = useCallback(
+    (rowKey) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const baseValue = normalizeActionValue(baseRow?.Action ?? "");
+      if (!Object.prototype.hasOwnProperty.call(modalActionDrafts, rowKey)) {
+        return false;
+      }
+      const draftValue = modalActionDrafts[rowKey];
+      return (draftValue ?? null) !== (baseValue ?? null);
+    },
+    [ledgerModalRowMap, modalActionDrafts]
+  );
+
+  const isModalAcceptDirtyForRow = useCallback(
+    (rowKey) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const baseValue = normalizeAcceptCreditValue(
+        baseRow?.["Accept Credit"] ?? ""
+      );
+      if (!Object.prototype.hasOwnProperty.call(modalAcceptCreditDrafts, rowKey)) {
+        return false;
+      }
+      const draftValue = modalAcceptCreditDrafts[rowKey];
+      return (draftValue ?? null) !== (baseValue ?? null);
+    },
+    [ledgerModalRowMap, modalAcceptCreditDrafts, normalizeAcceptCreditValue]
+  );
+
+  const handleLedgerModalAcceptCreditChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const normalized = normalizeAcceptCreditValue(value);
+      const baseValue = normalizeAcceptCreditValue(
+        baseRow?.["Accept Credit"] ?? ""
+      );
+      setModalAcceptCreditDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+      const actionDirty = isModalActionDirtyForRow(rowKey);
+      setModalAcceptDirtyState(
+        rowKey,
+        (normalized ?? null) !== (baseValue ?? null) || actionDirty
+      );
+    },
+    [
+      ledgerModalRowMap,
+      normalizeAcceptCreditValue,
+      isModalActionDirtyForRow,
+      setModalAcceptDirtyState,
+    ]
+  );
+
+  const handleLedgerModalActionChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const normalized = normalizeActionValue(value);
+      const baseValue = normalizeActionValue(baseRow?.Action ?? "");
+      setModalActionDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+      // Clear Action Reason if Action is changed to Accept
+      if (normalized === "Accept") {
+        setModalActionReasonDrafts((prev) => {
+          const next = { ...prev };
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        });
+      } else if (normalized === "Reject" || normalized === "Pending") {
+        // Clear Action Reason when changing to Reject/Pending to make it fresh/empty
+        setModalActionReasonDrafts((prev) => {
+          const next = { ...prev };
+          next[rowKey] = ""; // Set to empty string for fresh input
+          return next;
+        });
+      }
+      const acceptDirty = isMismatchedModal
+        ? isModalAcceptDirtyForRow(rowKey)
+        : false;
+      setModalAcceptDirtyState(
+        rowKey,
+        (normalized ?? null) !== (baseValue ?? null) || acceptDirty
+      );
+    },
+    [
+      ledgerModalRowMap,
+      setModalAcceptDirtyState,
+      isModalAcceptDirtyForRow,
+      isMismatchedModal,
+    ]
+  );
+
+  const handleLedgerModalActionReasonChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const trimmedValue = String(value || "").trim();
+      const baseValue = baseRow?.["Action Reason"] ?? "";
+      setModalActionReasonDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmedValue === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmedValue;
+        return next;
+      });
+      // Mark as dirty if Action Reason changed
+      const actionDirty = isModalActionDirtyForRow(rowKey);
+      const acceptDirty = isMismatchedModal
+        ? isModalAcceptDirtyForRow(rowKey)
+        : false;
+      setModalAcceptDirtyState(
+        rowKey,
+        (trimmedValue !== baseValue) || actionDirty || acceptDirty
+      );
+    },
+    [
+      ledgerModalRowMap,
+      setModalAcceptDirtyState,
+      isModalActionDirtyForRow,
+      isMismatchedModal,
+    ]
+  );
 
   const downloadRawExcel = async (importId) => {
     try {
@@ -238,9 +596,10 @@ const B2BCompanyHistory = () => {
       const worksheet = XLSX.utils.json_to_sheet(worksheetRows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2B");
-      const filename = `${sanitizeFileName(
-        doc.companySnapshot?.companyName || company?.companyName || "company"
-      )}-gstr2b.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "GSTR2BExcel",
+        doc.companySnapshot?.companyName || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
     } catch (err) {
       console.error("Failed to download raw excel:", err);
@@ -294,32 +653,40 @@ const B2BCompanyHistory = () => {
       }
 
       const workbook = XLSX.utils.book_new();
-      let exportRows = rows;
+      const sanitizedSourceRows = stripMetaFields(rows);
+      let exportRows = sanitizedSourceRows;
       if (mismatched) {
-        exportRows = rows.map(
-          ({
-            "Ledger Amount 5%": _la5,
-            "Ledger DR/CR 5%": _ldr5,
-            "IGST Rate 5%": _ir5,
-            "CGST Rate 5%": _cr5,
-            "SGST/UTGST Rate 5%": _sr5,
-            "Ledger Amount 12%": _la12,
-            "Ledger DR/CR 12%": _ldr12,
-            "IGST Rate 12%": _ir12,
-            "CGST Rate 12%": _cr12,
-            "SGST/UTGST Rate 12%": _sr12,
-            "Ledger Amount 18%": _la18,
-            "Ledger DR/CR 18%": _ldr18,
-            "IGST Rate 18%": _ir18,
-            "CGST Rate 18%": _cr18,
-            "SGST/UTGST Rate 18%": _sr18,
-            "Ledger Amount 28%": _la28,
-            "Ledger DR/CR 28%": _ldr28,
-            "IGST Rate 28%": _ir28,
-            "CGST Rate 28%": _cr28,
-            "SGST/UTGST Rate 28%": _sr28,
-            ...rest
-          }) => rest
+        exportRows = sanitizedSourceRows.map(
+          (
+            {
+              "Ledger Amount 5%": _la5,
+              "Ledger DR/CR 5%": _ldr5,
+              "IGST Rate 5%": _ir5,
+              "CGST Rate 5%": _cr5,
+              "SGST/UTGST Rate 5%": _sr5,
+              "Ledger Amount 12%": _la12,
+              "Ledger DR/CR 12%": _ldr12,
+              "IGST Rate 12%": _ir12,
+              "CGST Rate 12%": _cr12,
+              "SGST/UTGST Rate 12%": _sr12,
+              "Ledger Amount 18%": _la18,
+              "Ledger DR/CR 18%": _ldr18,
+              "IGST Rate 18%": _ir18,
+              "CGST Rate 18%": _cr18,
+              "SGST/UTGST Rate 18%": _sr18,
+              "Ledger Amount 28%": _la28,
+              "Ledger DR/CR 28%": _ldr28,
+              "IGST Rate 28%": _ir28,
+              "CGST Rate 28%": _cr28,
+              "SGST/UTGST Rate 28%": _sr28,
+              ...rest
+            },
+            idx
+          ) => ({
+            ...rest,
+            "Accept Credit":
+              rows?.[idx]?.["Accept Credit"] ?? rest["Accept Credit"] ?? "",
+          })
         );
       }
       const sheet = XLSX.utils.json_to_sheet(exportRows);
@@ -328,9 +695,10 @@ const B2BCompanyHistory = () => {
         sheet,
         mismatched ? "Mismatched" : "Processed"
       );
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )}-${mismatched ? "mismatched-data" : "tallymap"}.xlsx`;
+      const filename = `${buildDownloadFilename(
+        mismatched ? "MismatchedExcel" : "TallyProcessedExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
     } catch (err) {
       console.error("Failed to download processed excel:", err);
@@ -358,11 +726,12 @@ const B2BCompanyHistory = () => {
       }
 
       const workbook = XLSX.utils.book_new();
-      const sheet = XLSX.utils.json_to_sheet(rows);
+      const sheet = XLSX.utils.json_to_sheet(stripMetaFields(rows));
       XLSX.utils.book_append_sheet(workbook, sheet, "Reverse Charge");
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )} - supply reverse charge.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "ReverseChargeExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
       setStatus({
         type: "success",
@@ -397,11 +766,14 @@ const B2BCompanyHistory = () => {
       }
 
       const workbook = XLSX.utils.book_new();
-      const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
+      const disallowSheet = XLSX.utils.json_to_sheet(
+        stripMetaFields(disallowRows)
+      );
       XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )} - disallow.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "DisallowExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
       setStatus({
         type: "success",
@@ -423,73 +795,34 @@ const B2BCompanyHistory = () => {
         });
         return;
       }
-
-      const workbook = XLSX.utils.book_new();
-      
-      // Add processed sheet
-      if (doc.processedRows?.length > 0) {
-        const processedSheet = XLSX.utils.json_to_sheet(doc.processedRows);
-        XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
-      }
-      
-      // Add mismatched sheet
-      if (doc.mismatchedRows?.length > 0) {
-        const sanitizedMismatched = doc.mismatchedRows.map(
-          ({
-            "Ledger Amount 5%": _la5,
-            "Ledger DR/CR 5%": _ldr5,
-            "IGST Rate 5%": _ir5,
-            "CGST Rate 5%": _cr5,
-            "SGST/UTGST Rate 5%": _sr5,
-            "Ledger Amount 12%": _la12,
-            "Ledger DR/CR 12%": _ldr12,
-            "IGST Rate 12%": _ir12,
-            "CGST Rate 12%": _cr12,
-            "SGST/UTGST Rate 12%": _sr12,
-            "Ledger Amount 18%": _la18,
-            "Ledger DR/CR 18%": _ldr18,
-            "IGST Rate 18%": _ir18,
-            "CGST Rate 18%": _cr18,
-            "SGST/UTGST Rate 18%": _sr18,
-            "Ledger Amount 28%": _la28,
-            "Ledger DR/CR 28%": _ldr28,
-            "IGST Rate 28%": _ir28,
-            "CGST Rate 28%": _cr28,
-            "SGST/UTGST Rate 28%": _sr28,
-            ...rest
-          }) => rest
-        );
-        const mismatchedSheet = XLSX.utils.json_to_sheet(sanitizedMismatched);
-        XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
-      }
-      
-      // Add reverse charge sheet
-      if (doc.reverseChargeRows?.length > 0) {
-        const reverseChargeSheet = XLSX.utils.json_to_sheet(doc.reverseChargeRows);
-        XLSX.utils.book_append_sheet(workbook, reverseChargeSheet, "Reverse Charge");
-      }
-      
-      // Add disallow sheet if any rows have disallow ledger names
-      const disallowRows =
+      const importDoc = await ensureImportDoc(importId);
+      const originalRows = importDoc?.rows || [];
+      const processedRowsClean = stripMetaFields(doc.processedRows || []);
+      const processedHeaders = processedRowsClean[0]
+        ? extractVisibleColumns(processedRowsClean[0])
+        : [];
+      const mismatchedRowsClean = stripMetaFields(doc.mismatchedRows || []);
+      const reverseChargeRowsClean = stripMetaFields(doc.reverseChargeRows || []);
+      const disallowSource =
         doc.disallowRows?.length > 0
           ? doc.disallowRows
           : filterDisallowRows(doc.processedRows || []);
-      if (disallowRows.length > 0) {
-        const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
-        XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
-      }
+      const disallowRowsClean = stripMetaFields(disallowSource);
 
-      if (workbook.SheetNames.length === 0) {
-        setStatus({
-          type: "error",
-          message: "No data available to download.",
-        });
-        return;
-      }
+      const workbook = buildCombinedWorkbook({
+        originalRows,
+        processedRows: processedRowsClean,
+        processedHeaders,
+        mismatchedRows: mismatchedRowsClean,
+        reverseChargeRows: reverseChargeRowsClean,
+        disallowRows: disallowRowsClean,
+        normalizeAcceptCreditValue,
+      });
 
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )} - combined.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "CombinedExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
       setStatus({
         type: "success",
@@ -543,16 +876,24 @@ const B2BCompanyHistory = () => {
         return;
       }
       const columnBlacklist = ["5%", "12%", "18%", "28%"];
-      let columns = Object.keys(rows[0] || {});
-      let displayRows = rows.slice(0, 100); // limit for modal
+      const sanitizedRows = stripMetaFields(rows);
+      let columns = sanitizedRows[0]
+        ? extractVisibleColumns(sanitizedRows[0])
+        : [];
+      let displayRows = sanitizedRows.slice(0, 100); // limit for modal
 
       if (mismatched) {
-        columns = columns.filter(
+        let filteredColumns = columns.filter(
           (col) => !columnBlacklist.some((pattern) => col.includes(pattern))
         );
+        if (!filteredColumns.includes("Accept Credit")) {
+          filteredColumns = [...filteredColumns, "Accept Credit"];
+        }
+        columns = filteredColumns;
         displayRows = displayRows.map((row) =>
           columns.reduce((acc, col) => {
-            acc[col] = row?.[col];
+            acc[col] =
+              col === "Accept Credit" ? row?.["Accept Credit"] ?? "" : row?.[col];
             return acc;
           }, {})
         );
@@ -574,10 +915,16 @@ const B2BCompanyHistory = () => {
     try {
       const doc = await ensureProcessedDoc(importId);
       if (!doc) return;
-      if (!doc.processedRows?.length) {
+      const hasAnyRows =
+        (doc.processedRows?.length || 0) > 0 ||
+        (doc.reverseChargeRows?.length || 0) > 0 ||
+        (doc.mismatchedRows?.length || 0) > 0 ||
+        ((doc.disallowRows?.length ||
+          filterDisallowRows(doc.processedRows || []).length) > 0);
+      if (!hasAnyRows) {
         setStatus({
           type: "error",
-          message: "No processed rows available.",
+          message: "No processed data available for ledger editing.",
         });
         return;
       }
@@ -585,6 +932,7 @@ const B2BCompanyHistory = () => {
         open: true,
         processed: doc,
         importId,
+        activeTab: "processed",
       });
     } catch (err) {
       console.error("Failed to open ledger editor:", err);
@@ -606,6 +954,8 @@ const B2BCompanyHistory = () => {
           type: "success",
           message: "Ledger names updated for this processed file.",
         });
+        setModalAcceptCreditDrafts({});
+        setModalActionDrafts({});
       } else {
         setStatus({
           type: "success",
@@ -755,77 +1105,92 @@ const B2BCompanyHistory = () => {
                       </td>
                       <td className="px-2 py-3">
                         <div className="flex flex-wrap gap-2">
+                          {/* 1. GSTR-2B download & view */}
                           <button
                             onClick={() => downloadRawExcel(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiDownload /> Raw
+                            <FiDownload /> GSTR2B Excel
                           </button>
                           <button
                             onClick={() => openRawPreview(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiEye /> Raw
+                            <FiEye /> View GSTR2B
                           </button>
-                          <button
-                            onClick={() => downloadProcessedExcel(imp._id, false)}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
-                          >
-                            <FiDownload /> Processed
-                          </button>
+
+                          {/* 2. Edit LedgerMaster */}
                           <button
                             onClick={() => openProcessedEditor(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
                           >
-                            <FiEdit2 /> Edit Ledgers
+                            <FiEdit2 /> Edit LedgerMaster
                           </button>
+
+                          {/* 3. Combined download */}
                           <button
-                            onClick={() => downloadProcessedExcel(imp._id, true)}
+                            onClick={() => downloadCombinedExcel(imp._id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                          >
+                            <FiDownload /> Combined Excel
+                          </button>
+
+                          {/* 4. Processed download & view */}
+                          <button
+                            onClick={() => downloadProcessedExcel(imp._id, false)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiDownload /> Mismatched
+                            <FiDownload /> TallyProcessedExcel
                           </button>
                           <button
                             onClick={() => openProcessedPreview(imp._id, false)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiEye /> Processed
+                            <FiEye /> View Processed
+                          </button>
+
+                          {/* 5. Mismatched download & view */}
+                          <button
+                            onClick={() => downloadProcessedExcel(imp._id, true)}
+                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                          >
+                            <FiDownload /> Mismatched Excel
                           </button>
                           <button
                             onClick={() => openProcessedPreview(imp._id, true)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiEye /> Mismatched
+                            <FiEye /> View Mismatched
                           </button>
+
+                          {/* 6. Reverse Charge download & view */}
                           <button
                             onClick={() => downloadReverseChargeExcel(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-purple-200 px-3 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-50"
                           >
-                            <FiDownload /> Reverse Charge
+                            <FiDownload /> Reverse Charge Excel
                           </button>
                           <button
                             onClick={() => openProcessedPreview(imp._id, false, true)}
                             className="inline-flex items-center gap-1 rounded-full border border-purple-200 px-3 py-1 text-xs font-semibold text-purple-700 hover:bg-purple-50"
                           >
-                            <FiEye /> Reverse Charge
+                            <FiEye /> View Reverse Charge
                           </button>
+
+                          {/* 7. Disallow download & view */}
                           <button
                             onClick={() => downloadDisallowExcel(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
                           >
-                            <FiDownload /> Disallow
+                            <FiDownload /> Disallow Excel
                           </button>
                           <button
-                            onClick={() => openProcessedPreview(imp._id, false, false, true)}
+                            onClick={() =>
+                              openProcessedPreview(imp._id, false, false, true)
+                            }
                             className="inline-flex items-center gap-1 rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
                           >
-                            <FiEye /> Disallow
-                          </button>
-                          <button
-                            onClick={() => downloadCombinedExcel(imp._id)}
-                            className="inline-flex items-center gap-1 rounded-full border border-indigo-200 px-3 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-                          >
-                            <FiDownload /> Combined
+                            <FiEye /> View Disallow
                           </button>
                         </div>
                       </td>
@@ -869,31 +1234,25 @@ const B2BCompanyHistory = () => {
               </button>
             </header>
             {/* Tabs */}
-            <div className="flex gap-2 border-b border-amber-200">
-              <button
-                type="button"
-                onClick={() => setLedgerModal((prev) => ({ ...prev, activeTab: "processed" }))}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-                  ledgerModal.activeTab === "processed"
-                    ? "border-amber-500 text-amber-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                Processed Rows ({ledgerModalProcessedRows.length})
-              </button>
-              {hasReverseChargeRows && (
+            <div className="flex flex-wrap gap-2 border-b border-amber-200">
+              {ledgerModalTabConfigs.map(({ key, label, enabled, activeClass }) => (
                 <button
+                  key={key}
                   type="button"
-                  onClick={() => setLedgerModal((prev) => ({ ...prev, activeTab: "reverseCharge" }))}
+                  onClick={() =>
+                    enabled &&
+                    setLedgerModal((prev) => ({ ...prev, activeTab: key }))
+                  }
+                  disabled={!enabled}
                   className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-                    ledgerModal.activeTab === "reverseCharge"
-                      ? "border-purple-500 text-purple-700"
+                    ledgerModal.activeTab === key
+                      ? activeClass
                       : "border-transparent text-slate-500 hover:text-slate-700"
-                  }`}
+                  } ${enabled ? "" : "opacity-50 cursor-not-allowed"}`}
                 >
-                  Reverse Charge Rows ({ledgerModalReverseChargeRows.length})
+                  {label}
                 </button>
-              )}
+              ))}
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -916,7 +1275,11 @@ const B2BCompanyHistory = () => {
               <button
                 type="button"
                 onClick={handleLedgerModalSave}
-                disabled={!modalDirtyCount || modalSavingLedgerChanges}
+                disabled={
+                  !hasLedgerModalRows ||
+                  !modalDirtyCount ||
+                  modalSavingLedgerChanges
+                }
                 className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {modalSavingLedgerChanges ? (
@@ -960,40 +1323,126 @@ const B2BCompanyHistory = () => {
                           key={rowKey}
                           className="border-b border-amber-50 last:border-0"
                         >
-                          {ledgerModalColumns.map((column) => (
-                            <td key={`${rowKey}-${column}`} className="px-2 py-2">
-                              {column === "Ledger Name" ? (
-                                <LedgerNameDropdown
-                                  value={ledgerValue}
-                                  options={ledgerNames}
-                                  onChange={(newValue) =>
-                                    modalHandleLedgerInputChange(rowKey, newValue)
-                                  }
-                                  onAddNew={async (newName) => {
-                                    try {
-                                      await createLedgerNameApi({ name: newName });
-                                      await loadLedgerNames();
-                                      modalHandleLedgerInputChange(rowKey, newName);
-                                      setStatus({
-                                        type: "success",
-                                        message: "Ledger name added.",
-                                      });
-                                    } catch (error) {
-                                      console.error("Failed to add ledger name:", error);
-                                      setStatus({
-                                        type: "error",
-                                        message:
-                                          error?.response?.data?.message ||
-                                          "Unable to add ledger name.",
-                                      });
+                          {ledgerModalColumns.map((column) => {
+                            const cellKey = `${rowKey}-${column}`;
+                            return (
+                              <td key={cellKey} className="px-2 py-3 align-middle">
+                                {column === "Ledger Name" ? (
+                                  <LedgerNameDropdown
+                                    value={ledgerValue}
+                                    options={ledgerNames}
+                                    onChange={(newValue) =>
+                                      modalHandleLedgerInputChange(rowKey, newValue)
                                     }
-                                  }}
-                                />
-                              ) : (
-                                <span>{toDisplayValue(row?.[column])}</span>
-                              )}
-                            </td>
-                          ))}
+                                    onAddNew={async (newName) => {
+                                      try {
+                                        await createLedgerNameApi({ name: newName });
+                                        await loadLedgerNames();
+                                        modalHandleLedgerInputChange(rowKey, newName);
+                                        setStatus({
+                                          type: "success",
+                                          message: "Ledger name added.",
+                                        });
+                                      } catch (error) {
+                                        console.error("Failed to add ledger name:", error);
+                                        setStatus({
+                                          type: "error",
+                                          message:
+                                            error?.response?.data?.message ||
+                                            "Unable to add ledger name.",
+                                        });
+                                      }
+                                    }}
+                                  />
+                                ) : isMismatchedModal &&
+                                  column === "Accept Credit" ? (
+                                  <select
+                                    value={
+                                      (() => {
+                                        const hasDraft = Object.prototype.hasOwnProperty.call(
+                                          modalAcceptCreditDrafts,
+                                          rowKey
+                                        );
+                                        const draftValue = hasDraft ? modalAcceptCreditDrafts[rowKey] : undefined;
+                                        const sourceValue =
+                                          draftValue !== undefined ? draftValue : row?.["Accept Credit"] ?? "";
+                                        return normalizeAcceptCreditValue(sourceValue) ?? "";
+                                      })()
+                                    }
+                                    onChange={(event) =>
+                                      handleLedgerModalAcceptCreditChange(
+                                        rowKey,
+                                        event.target.value
+                                      )
+                                    }
+                                    className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                  >
+                                    <option value="">Select</option>
+                                    <option value="Yes">Yes</option>
+                                    <option value="No">No</option>
+                                  </select>
+                                ) : column === "Accept Credit" ? (
+                                  renderModalAcceptCreditBadge(
+                                    Object.prototype.hasOwnProperty.call(
+                                      modalAcceptCreditDrafts,
+                                      rowKey
+                                    )
+                                      ? modalAcceptCreditDrafts[rowKey]
+                                      : row?.[column]
+                                  )
+                                ) : column === "Action" ? (
+                                  <select
+                                    value={getModalActionValueForRow(row, rowKey) ?? ""}
+                                    onChange={(event) =>
+                                      handleLedgerModalActionChange(
+                                        rowKey,
+                                        event.target.value
+                                      )
+                                    }
+                                    className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                  >
+                                    <option value="">Select</option>
+                                    {ACTION_OPTIONS.map((option) => (
+                                      <option key={option} value={option}>
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : column === "Action Reason" ? (
+                                  (() => {
+                                    const actionValue = getModalActionValueForRow(row, rowKey);
+                                    const shouldShow = actionValue === "Reject" || actionValue === "Pending";
+                                    if (!shouldShow) {
+                                      return <span className="text-slate-400">—</span>;
+                                    }
+                                    const hasDraft = Object.prototype.hasOwnProperty.call(
+                                      modalActionReasonDrafts,
+                                      rowKey
+                                    );
+                                    const draftValue = hasDraft ? modalActionReasonDrafts[rowKey] : undefined;
+                                    const currentValue =
+                                      draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+                                    return (
+                                      <input
+                                        type="text"
+                                        value={currentValue}
+                                        onChange={(event) =>
+                                          handleLedgerModalActionReasonChange(
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        placeholder="Enter reason..."
+                                        className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                      />
+                                    );
+                                  })()
+                                ) : (
+                                  <span>{toDisplayValue(row?.[column])}</span>
+                                )}
+                              </td>
+                            );
+                          })}
                         </tr>
                       );
                     })}

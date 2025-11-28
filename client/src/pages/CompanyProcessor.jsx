@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import {
   FiAlertCircle,
   FiDownload,
@@ -18,6 +18,9 @@ import {
   processGstr2bImport,
   fetchProcessedFile,
   updateReverseChargeLedgerNames,
+  updateMismatchedLedgerNames,
+  updateDisallowLedgerNames,
+  fetchImportById,
 } from "../services/gstr2bservice";
 import {
   createLedgerName as createLedgerNameApi,
@@ -26,6 +29,7 @@ import {
 import { fetchPartyMasters } from "../services/partymasterservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
+import { buildCombinedWorkbook } from "../utils/buildCombinedWorkbook";
 import BackButton from "../components/BackButton";
 import LedgerNameDropdown from "../components/LedgerNameDropdown";
 import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
@@ -150,6 +154,17 @@ const taxKeys = [
   "SGST/UTGST Rate 28%",
 ];
 
+const shouldHideColumn = (key = "") => key.startsWith("_");
+const extractVisibleColumns = (row = {}) =>
+  Object.keys(row || {}).filter((key) => !shouldHideColumn(key));
+const stripMetaFields = (rows = []) =>
+  rows.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    return Object.fromEntries(
+      Object.entries(row).filter(([key]) => !shouldHideColumn(key))
+    );
+  });
+
 const toNumber = (value) => {
   if (value === null || value === undefined || value === "") return 0;
   const numeric = parseFloat(String(value).replace(/,/g, ""));
@@ -200,6 +215,29 @@ const filterDisallowRows = (rows) => {
   });
 };
 
+const ACTION_OPTIONS = ["Accept", "Reject", "Pending"];
+
+function normalizeAcceptCreditValue(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "yes" || lower === "y") return "Yes";
+  if (lower === "no" || lower === "n") return "No";
+  return null;
+}
+
+function normalizeActionValue(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "accept") return "Accept";
+  if (lower === "reject") return "Reject";
+  if (lower === "pending") return "Pending";
+  return null;
+}
+
 const CompanyProcessor = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -226,12 +264,33 @@ const CompanyProcessor = () => {
   const [partyMasters, setPartyMasters] = useState([]);
   const [partyMastersLoading, setPartyMastersLoading] = useState(false);
   const [missingSuppliers, setMissingSuppliers] = useState([]);
+  const [acceptCreditDrafts, setAcceptCreditDrafts] = useState({});
+  const [actionDrafts, setActionDrafts] = useState({});
+  const [actionReasonDrafts, setActionReasonDrafts] = useState({});
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
   );
 
+  const originalRowsCache = useRef({});
+
   const [activeTab, setActiveTab] = useState("processed"); // "processed" or "reverseCharge"
+
+  const buildDownloadFilename = useCallback(
+    (type, overrideName) => {
+      const baseName = sanitizeFileName(
+        overrideName ||
+          processedDoc?.company ||
+          company?.companyName ||
+          "company"
+      );
+      const now = new Date();
+      const month = now.toLocaleString("en-US", { month: "short" });
+      const year = now.getFullYear();
+      return `${baseName}-${type}-${month}-${year}`;
+    },
+    [company, processedDoc]
+  );
 
   const processedRows = useMemo(
     () => processedDoc?.processedRows || [],
@@ -241,27 +300,172 @@ const CompanyProcessor = () => {
     () => processedDoc?.reverseChargeRows || [],
     [processedDoc]
   );
+  const mismatchedRows = useMemo(
+    () => processedDoc?.mismatchedRows || [],
+    [processedDoc]
+  );
+  const disallowRows = useMemo(() => {
+    if (!processedDoc) return [];
+    if (processedDoc.disallowRows?.length) return processedDoc.disallowRows;
+    return filterDisallowRows(processedDoc.processedRows || []);
+  }, [processedDoc]);
   const processedColumns = useMemo(
-    () => (processedRows[0] ? Object.keys(processedRows[0]) : []),
+    () => (processedRows[0] ? extractVisibleColumns(processedRows[0]) : []),
     [processedRows]
   );
   const reverseChargeColumns = useMemo(
-    () => (reverseChargeRows[0] ? Object.keys(reverseChargeRows[0]) : []),
+    () =>
+      reverseChargeRows[0]
+        ? extractVisibleColumns(reverseChargeRows[0])
+        : [],
     [reverseChargeRows]
+  );
+  const mismatchedColumns = useMemo(
+    () =>
+      mismatchedRows[0] ? extractVisibleColumns(mismatchedRows[0]) : [],
+    [mismatchedRows]
+  );
+  const mismatchedColumnsWithAccept = useMemo(() => {
+    const base = [...mismatchedColumns];
+    if (!base.includes("Accept Credit")) {
+      base.push("Accept Credit");
+    }
+    return base;
+  }, [mismatchedColumns]);
+  const disallowColumns = useMemo(
+    () =>
+      disallowRows[0] ? extractVisibleColumns(disallowRows[0]) : [],
+    [disallowRows]
   );
   const hasProcessedRows = processedRows.length > 0;
   const hasReverseChargeRows = reverseChargeRows.length > 0;
-  
+  const hasMismatchedRows = mismatchedRows.length > 0;
+  const hasDisallowRows = disallowRows.length > 0;
+
+  const buildRowMap = useCallback(
+    (rows = []) => {
+      const map = new Map();
+      rows.forEach((row, idx) => {
+        map.set(getRowKey(row, idx), row);
+      });
+      return map;
+    },
+    [getRowKey]
+  );
+
+  const processedRowMap = useMemo(
+    () => buildRowMap(processedRows),
+    [buildRowMap, processedRows]
+  );
+  const reverseChargeRowMap = useMemo(
+    () => buildRowMap(reverseChargeRows),
+    [buildRowMap, reverseChargeRows]
+  );
+  const mismatchedRowMap = useMemo(
+    () => buildRowMap(mismatchedRows),
+    [buildRowMap, mismatchedRows]
+  );
+  const disallowRowMap = useMemo(
+    () => buildRowMap(disallowRows),
+    [buildRowMap, disallowRows]
+  );
+
+  const getActionValueForRow = useCallback(
+    (row, rowKey) => {
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        actionDrafts,
+        rowKey
+      );
+      const draftValue = hasDraft ? actionDrafts[rowKey] : undefined;
+      const sourceValue =
+        draftValue !== undefined ? draftValue : row?.Action ?? "";
+      return normalizeActionValue(sourceValue);
+    },
+    [actionDrafts]
+  );
+
+  const isActionDirtyForRow = useCallback(
+    (rowKey, rowMap) => {
+      const baseRow = rowMap?.get(rowKey);
+      const baseValue = normalizeActionValue(baseRow?.Action ?? "");
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        actionDrafts,
+        rowKey
+      );
+      if (!hasDraft) {
+        return false;
+      }
+      const draftValue = actionDrafts[rowKey];
+      return draftValue !== baseValue;
+    },
+    [actionDrafts]
+  );
+
+  const isAcceptDirtyForRow = useCallback(
+    (rowKey) => {
+      const baseRow = mismatchedRowMap.get(rowKey);
+      const baseValue = normalizeAcceptCreditValue(
+        baseRow?.["Accept Credit"] ?? ""
+      );
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        acceptCreditDrafts,
+        rowKey
+      );
+      if (!hasDraft) {
+        return false;
+      }
+      const draftValue = acceptCreditDrafts[rowKey];
+      return draftValue !== baseValue;
+    },
+    [mismatchedRowMap, acceptCreditDrafts, normalizeAcceptCreditValue]
+  );
+
+  const clearActionDraftsForRows = useCallback(
+    (rows = []) => {
+      setActionDrafts((prev) => {
+        if (!rows.length) return prev;
+        const next = { ...prev };
+        rows.forEach((row, idx) => {
+          const key = getRowKey(row, idx);
+          if (Object.prototype.hasOwnProperty.call(next, key)) {
+            delete next[key];
+          }
+        });
+        return next;
+      });
+    },
+    [getRowKey]
+  );
+
   const {
     ledgerInputs: processedLedgerInputs,
     handleLedgerInputChange: handleProcessedLedgerInputChange,
     dirtyCount: processedLedgerDirtyCount,
     persistLedgerChanges: persistProcessedLedgerChanges,
     savingLedgerChanges: savingProcessedLedgerChanges,
+    setExtraRowDirtyState: setProcessedExtraDirtyState,
   } = useLedgerNameEditing({
     rows: processedRows,
     importId,
     getRowKey,
+    getRowPayload: (row, rowKey) => {
+      const payload = {
+        action: getActionValueForRow(row, rowKey),
+      };
+      // Add Action Reason if Action is Reject or Pending
+      const actionValue = getActionValueForRow(row, rowKey);
+      if (actionValue === "Reject" || actionValue === "Pending") {
+        const hasDraft = Object.prototype.hasOwnProperty.call(
+          actionReasonDrafts,
+          rowKey
+        );
+        const draftValue = hasDraft ? actionReasonDrafts[rowKey] : undefined;
+        const sourceValue =
+          draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+        payload.actionReason = sourceValue || null;
+      }
+      return payload;
+    },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
@@ -275,18 +479,383 @@ const CompanyProcessor = () => {
     dirtyCount: reverseChargeLedgerDirtyCount,
     persistLedgerChanges: persistReverseChargeLedgerChanges,
     savingLedgerChanges: savingReverseChargeLedgerChanges,
+    setExtraRowDirtyState: setReverseChargeExtraDirtyState,
   } = useLedgerNameEditing({
     rows: reverseChargeRows,
     importId,
     getRowKey,
     updateFunction: updateReverseChargeLedgerNames,
     rowsKey: "reverseChargeRows",
+    getRowPayload: (row, rowKey) => {
+      const payload = {
+        action: getActionValueForRow(row, rowKey),
+      };
+      // Add Action Reason if Action is Reject or Pending
+      const actionValue = getActionValueForRow(row, rowKey);
+      if (actionValue === "Reject" || actionValue === "Pending") {
+        const hasDraft = Object.prototype.hasOwnProperty.call(
+          actionReasonDrafts,
+          rowKey
+        );
+        const draftValue = hasDraft ? actionReasonDrafts[rowKey] : undefined;
+        const sourceValue =
+          draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+        payload.actionReason = sourceValue || null;
+      }
+      return payload;
+    },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
       }
     },
   });
+
+  const {
+    ledgerInputs: mismatchedLedgerInputs,
+    handleLedgerInputChange: handleMismatchedLedgerInputChange,
+    dirtyCount: mismatchedLedgerDirtyCount,
+    persistLedgerChanges: persistMismatchedLedgerChanges,
+    savingLedgerChanges: savingMismatchedLedgerChanges,
+    setExtraRowDirtyState: setMismatchedAcceptDirtyState,
+  } = useLedgerNameEditing({
+    rows: mismatchedRows,
+    importId,
+    getRowKey,
+    updateFunction: updateMismatchedLedgerNames,
+    rowsKey: "mismatchedRows",
+    getRowPayload: (row, rowKey) => {
+      if (!row) return {};
+      const payload = {
+        action: getActionValueForRow(row, rowKey),
+      };
+      // Add Action Reason if Action is Reject or Pending
+      const actionValue = getActionValueForRow(row, rowKey);
+      if (actionValue === "Reject" || actionValue === "Pending") {
+        const hasDraft = Object.prototype.hasOwnProperty.call(
+          actionReasonDrafts,
+          rowKey
+        );
+        const draftValue = hasDraft ? actionReasonDrafts[rowKey] : undefined;
+        const sourceValue =
+          draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+        payload.actionReason = sourceValue || null;
+      }
+      const draftValue =
+        Object.prototype.hasOwnProperty.call(acceptCreditDrafts, rowKey)
+          ? acceptCreditDrafts[rowKey]
+          : undefined;
+      const sourceValue =
+        draftValue !== undefined ? draftValue : row?.["Accept Credit"] ?? "";
+      payload.acceptCredit = normalizeAcceptCreditValue(sourceValue);
+      return payload;
+    },
+    onUpdated: (updated) => {
+      if (updated) {
+        setProcessedDoc(updated);
+      }
+    },
+  });
+
+  const {
+    ledgerInputs: disallowLedgerInputs,
+    handleLedgerInputChange: handleDisallowLedgerInputChange,
+    dirtyCount: disallowLedgerDirtyCount,
+    persistLedgerChanges: persistDisallowLedgerChanges,
+    savingLedgerChanges: savingDisallowLedgerChanges,
+    setExtraRowDirtyState: setDisallowExtraDirtyState,
+  } = useLedgerNameEditing({
+    rows: disallowRows,
+    importId,
+    getRowKey,
+    updateFunction: updateDisallowLedgerNames,
+    rowsKey: "disallowRows",
+    getRowPayload: (row, rowKey) => {
+      const payload = {
+        action: getActionValueForRow(row, rowKey),
+      };
+      // Add Action Reason if Action is Reject or Pending
+      const actionValue = getActionValueForRow(row, rowKey);
+      if (actionValue === "Reject" || actionValue === "Pending") {
+        const hasDraft = Object.prototype.hasOwnProperty.call(
+          actionReasonDrafts,
+          rowKey
+        );
+        const draftValue = hasDraft ? actionReasonDrafts[rowKey] : undefined;
+        const sourceValue =
+          draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+        payload.actionReason = sourceValue || null;
+      }
+      return payload;
+    },
+    onUpdated: (updated) => {
+      if (updated) {
+        setProcessedDoc(updated);
+      }
+    },
+  });
+
+  const handleAcceptCreditChange = useCallback(
+    (rowKey, value) => {
+      const normalized = normalizeAcceptCreditValue(value);
+      const baseRow = mismatchedRowMap.get(rowKey);
+      const baseValue = normalizeAcceptCreditValue(
+        baseRow?.["Accept Credit"] ?? ""
+      );
+      setAcceptCreditDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+      const actionDirty = isActionDirtyForRow(rowKey, mismatchedRowMap);
+      setMismatchedAcceptDirtyState(
+        rowKey,
+        (normalized ?? null) !== (baseValue ?? null) || actionDirty
+      );
+    },
+    [
+      mismatchedRowMap,
+      normalizeAcceptCreditValue,
+      setMismatchedAcceptDirtyState,
+      isActionDirtyForRow,
+    ]
+  );
+
+  const handleActionChange = useCallback(
+    (tabKey, rowKey, value) => {
+      const rowMaps = {
+        processed: processedRowMap,
+        reverseCharge: reverseChargeRowMap,
+        mismatched: mismatchedRowMap,
+        disallow: disallowRowMap,
+      };
+      const dirtySetters = {
+        processed: setProcessedExtraDirtyState,
+        reverseCharge: setReverseChargeExtraDirtyState,
+        mismatched: setMismatchedAcceptDirtyState,
+        disallow: setDisallowExtraDirtyState,
+      };
+      const targetMap = rowMaps[tabKey];
+      const baseRow = targetMap?.get(rowKey);
+      const normalized = normalizeActionValue(value);
+      const baseValue = normalizeActionValue(baseRow?.Action ?? "");
+      setActionDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+      // Clear Action Reason if Action is changed to Accept
+      if (normalized === "Accept") {
+        setActionReasonDrafts((prev) => {
+          const next = { ...prev };
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        });
+      } else if (normalized === "Reject" || normalized === "Pending") {
+        // Clear Action Reason when changing to Reject/Pending to make it fresh/empty
+        setActionReasonDrafts((prev) => {
+          const next = { ...prev };
+          next[rowKey] = ""; // Set to empty string for fresh input
+          return next;
+        });
+      }
+      const setter = dirtySetters[tabKey];
+      if (setter) {
+        const acceptDirty =
+          tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
+        setter(rowKey, (normalized ?? null) !== (baseValue ?? null) || acceptDirty);
+      }
+    },
+    [
+      processedRowMap,
+      reverseChargeRowMap,
+      mismatchedRowMap,
+      disallowRowMap,
+      setProcessedExtraDirtyState,
+      setReverseChargeExtraDirtyState,
+      setMismatchedAcceptDirtyState,
+      setDisallowExtraDirtyState,
+      isAcceptDirtyForRow,
+      normalizeActionValue,
+    ]
+  );
+
+  const handleActionReasonChange = useCallback(
+    (tabKey, rowKey, value) => {
+      const rowMaps = {
+        processed: processedRowMap,
+        reverseCharge: reverseChargeRowMap,
+        mismatched: mismatchedRowMap,
+        disallow: disallowRowMap,
+      };
+      const dirtySetters = {
+        processed: setProcessedExtraDirtyState,
+        reverseCharge: setReverseChargeExtraDirtyState,
+        mismatched: setMismatchedAcceptDirtyState,
+        disallow: setDisallowExtraDirtyState,
+      };
+      const targetMap = rowMaps[tabKey];
+      const baseRow = targetMap?.get(rowKey);
+      const trimmedValue = String(value || "").trim();
+      const baseValue = baseRow?.["Action Reason"] ?? "";
+      
+      setActionReasonDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmedValue === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmedValue;
+        return next;
+      });
+      
+      const setter = dirtySetters[tabKey];
+      if (setter) {
+        const actionDirty = isActionDirtyForRow(rowKey, targetMap);
+        const acceptDirty =
+          tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
+        setter(rowKey, (trimmedValue !== baseValue) || actionDirty || acceptDirty);
+      }
+    },
+    [
+      processedRowMap,
+      reverseChargeRowMap,
+      mismatchedRowMap,
+      disallowRowMap,
+      setProcessedExtraDirtyState,
+      setReverseChargeExtraDirtyState,
+      setMismatchedAcceptDirtyState,
+      setDisallowExtraDirtyState,
+      isActionDirtyForRow,
+      isAcceptDirtyForRow,
+    ]
+  );
+
+  const appendActionColumn = useCallback((columns = []) => {
+    let result = [...columns];
+    if (!result.includes("Action")) {
+      result.push("Action");
+    }
+    if (!result.includes("Action Reason")) {
+      result.push("Action Reason");
+    }
+    return result;
+  }, []);
+
+  const tabConfigs = {
+    processed: {
+      key: "processed",
+      label: "Processed Rows",
+      rows: processedRows,
+      columns: appendActionColumn(processedColumns),
+      ledgerInputs: processedLedgerInputs,
+      handleChange: handleProcessedLedgerInputChange,
+      dirtyCount: processedLedgerDirtyCount,
+      persist: persistProcessedLedgerChanges,
+      saving: savingProcessedLedgerChanges,
+      hasRows: hasProcessedRows,
+      count: processedRows.length,
+      accent: "amber",
+    },
+    reverseCharge: {
+      key: "reverseCharge",
+      label: "Reverse Charge Rows",
+      rows: reverseChargeRows,
+      columns: appendActionColumn(reverseChargeColumns),
+      ledgerInputs: reverseChargeLedgerInputs,
+      handleChange: handleReverseChargeLedgerInputChange,
+      dirtyCount: reverseChargeLedgerDirtyCount,
+      persist: persistReverseChargeLedgerChanges,
+      saving: savingReverseChargeLedgerChanges,
+      hasRows: hasReverseChargeRows,
+      count: reverseChargeRows.length,
+      accent: "purple",
+    },
+    mismatched: {
+      key: "mismatched",
+      label: "Mismatched Rows",
+      rows: mismatchedRows,
+      columns: appendActionColumn(mismatchedColumnsWithAccept),
+      ledgerInputs: mismatchedLedgerInputs,
+      handleChange: handleMismatchedLedgerInputChange,
+      dirtyCount: mismatchedLedgerDirtyCount,
+      persist: persistMismatchedLedgerChanges,
+      saving: savingMismatchedLedgerChanges,
+      hasRows: hasMismatchedRows,
+      count: mismatchedRows.length,
+      accent: "orange",
+    },
+    disallow: {
+      key: "disallow",
+      label: "Disallow Rows",
+      rows: disallowRows,
+      columns: appendActionColumn(disallowColumns),
+      ledgerInputs: disallowLedgerInputs,
+      handleChange: handleDisallowLedgerInputChange,
+      dirtyCount: disallowLedgerDirtyCount,
+      persist: persistDisallowLedgerChanges,
+      saving: savingDisallowLedgerChanges,
+      hasRows: hasDisallowRows,
+      count: disallowRows.length,
+      accent: "red",
+    },
+  };
+
+  const tabOrder = ["processed", "reverseCharge", "mismatched", "disallow"];
+  const tabActiveClasses = {
+    processed: "border-amber-500 text-amber-700",
+    reverseCharge: "border-purple-500 text-purple-700",
+    mismatched: "border-orange-500 text-orange-700",
+    disallow: "border-red-500 text-red-700",
+  };
+  const activeConfig = tabConfigs[activeTab] || tabConfigs.processed;
+  const activeRows = activeConfig?.rows || [];
+  const activeColumns = activeConfig?.columns || [];
+  const activeLedgerInputs = activeConfig?.ledgerInputs || {};
+  const activeHandleChange = activeConfig?.handleChange || (() => {});
+  const activeDirtyCount = activeConfig?.dirtyCount || 0;
+  const activeSaving = Boolean(activeConfig?.saving);
+  const activePersistFn = activeConfig?.persist;
+  const activeHasRows = activeConfig?.hasRows;
+  const activeLabel = activeConfig?.label || "Ledger Rows";
+  const isMismatchedTab = activeConfig?.key === "mismatched";
+  const renderAcceptCreditBadge = useCallback((value) => {
+    if (!value) {
+      return <span className="text-slate-400">—</span>;
+    }
+    const normalized = String(value).trim().toLowerCase();
+    const isYes = normalized === "yes";
+    const badgeClasses = isYes
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+      : "bg-rose-50 text-rose-700 border-rose-200";
+    return (
+      <span
+        className={`inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClasses}`}
+      >
+        {value}
+      </span>
+    );
+  }, []);
 
   const loadLedgerNames = useCallback(async () => {
     setLedgerNamesLoading(true);
@@ -308,6 +877,78 @@ const CompanyProcessor = () => {
       setLedgerNamesLoading(false);
     }
   }, [setStatus]);
+
+  const getOriginalRows = useCallback(async () => {
+    if (sheetRows.length) {
+      return sheetRows;
+    }
+    if (!importId) {
+      return [];
+    }
+    if (originalRowsCache.current[importId]) {
+      return originalRowsCache.current[importId];
+    }
+    try {
+      const { data } = await fetchImportById(importId);
+      const rows = data?.rows || [];
+      originalRowsCache.current[importId] = rows;
+      return rows;
+    } catch (error) {
+      console.error("Failed to load original GSTR-2B rows:", error);
+      setStatus({
+        type: "error",
+        message: "Unable to load GSTR-2B data for combined download.",
+      });
+      return [];
+    }
+  }, [sheetRows, importId, setStatus]);
+
+  useEffect(() => {
+    setAcceptCreditDrafts({});
+    setActionDrafts({});
+  }, [importId]);
+
+  useEffect(() => {
+    if (processedDoc) {
+      setAcceptCreditDrafts({});
+      setActionDrafts({});
+    }
+  }, [processedDoc?.updatedAt]);
+
+  const persistAllLedgerChanges = useCallback(async () => {
+    let latestDoc = null;
+    const persistFns = [
+      persistProcessedLedgerChanges,
+      persistReverseChargeLedgerChanges,
+      persistMismatchedLedgerChanges,
+      persistDisallowLedgerChanges,
+    ];
+    let mismatchedSaved = false;
+
+    for (const persistFn of persistFns) {
+      if (typeof persistFn !== "function") continue;
+      const result = await persistFn();
+      if (result) {
+        latestDoc = result;
+        if (persistFn === persistMismatchedLedgerChanges) {
+          mismatchedSaved = true;
+        }
+        setActionDrafts({});
+      }
+    }
+
+    if (mismatchedSaved) {
+      setAcceptCreditDrafts({});
+    }
+
+    return latestDoc;
+  }, [
+    persistProcessedLedgerChanges,
+    persistReverseChargeLedgerChanges,
+    persistMismatchedLedgerChanges,
+    persistDisallowLedgerChanges,
+    setAcceptCreditDrafts,
+  ]);
 
   useEffect(() => {
     loadLedgerNames();
@@ -431,16 +1072,40 @@ const CompanyProcessor = () => {
   };
 
   const handleSaveLedgerNames = async () => {
+    const config = tabConfigs[activeTab];
+    if (!config?.persist) {
+      setStatus({
+        type: "error",
+        message: "Unable to save ledger names for this tab.",
+      });
+      return;
+    }
+
+    if (!config.dirtyCount) {
+      setStatus({
+        type: "success",
+        message: "No ledger changes to save.",
+      });
+      return;
+    }
+
     try {
-      const persistFn = activeTab === "processed" 
-        ? persistProcessedLedgerChanges 
-        : persistReverseChargeLedgerChanges;
-      const updated = await persistFn();
+      const updated = await config.persist();
       if (updated) {
         setStatus({
           type: "success",
-          message: `Ledger names saved to ${activeTab === "processed" ? "processed" : "reverse charge"} data.`,
+          message: `${config.label} ledger names saved.`,
         });
+        if (config.key === "mismatched") {
+          setAcceptCreditDrafts({});
+        }
+        const rowsByKey = {
+          processed: processedRows,
+          reverseCharge: reverseChargeRows,
+          mismatched: mismatchedRows,
+          disallow: disallowRows,
+        };
+        clearActionDraftsForRows(rowsByKey[config.key] || []);
       } else {
         setStatus({
           type: "success",
@@ -702,9 +1367,10 @@ const CompanyProcessor = () => {
     const worksheet = XLSX.utils.json_to_sheet(worksheetRows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2B");
-    const filename = `${sanitizeFileName(
-      company?.companyName || "company"
-    )}-gstr2b.xlsx`;
+    const filename = `${buildDownloadFilename(
+      "GSTR2BExcel",
+      company?.companyName
+    )}.xlsx`;
     XLSX.writeFile(workbook, filename);
     setStatus({ type: "success", message: "GSTR-2B Excel downloaded." });
   };
@@ -764,15 +1430,18 @@ const CompanyProcessor = () => {
       }
 
       const workbook = XLSX.utils.book_new();
-      const processedSheet = XLSX.utils.json_to_sheet(matchedRows);
+      const processedSheet = XLSX.utils.json_to_sheet(
+        stripMetaFields(matchedRows)
+      );
       XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )}-tallymap.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "TallyProcessedExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
       setStatus({
         type: "success",
-        message: "Processed Tally Map Excel downloaded.",
+        message: "TallyProcessedExcel downloaded.",
       });
     } catch (error) {
       console.error("Failed to download processed excel:", error);
@@ -787,54 +1456,74 @@ const CompanyProcessor = () => {
 
   const handleDownloadMismatchedExcel = async () => {
     if (!guardDownloads()) return;
-    const doc = await ensureProcessedDoc();
-    if (!doc) return;
+    try {
+      await persistMismatchedLedgerChanges();
+      const doc = await ensureProcessedDoc();
+      if (!doc) return;
 
-    const mismatchedRows = doc.mismatchedRows || [];
-    if (!mismatchedRows.length) {
+      const mismatchedRows = doc.mismatchedRows || [];
+      if (!mismatchedRows.length) {
+        setStatus({
+          type: "error",
+          message: "No mismatched rows available.",
+        });
+        return;
+      }
+
+      const workbook = XLSX.utils.book_new();
+      const cleanedMismatchedRows = stripMetaFields(mismatchedRows);
+      const sanitizedRows = cleanedMismatchedRows.map(
+        ({
+          "Ledger Amount 5%": _la5,
+          "Ledger DR/CR 5%": _ldr5,
+          "IGST Rate 5%": _ir5,
+          "CGST Rate 5%": _cr5,
+          "SGST/UTGST Rate 5%": _sr5,
+          "Ledger Amount 12%": _la12,
+          "Ledger DR/CR 12%": _ldr12,
+          "IGST Rate 12%": _ir12,
+          "CGST Rate 12%": _cr12,
+          "SGST/UTGST Rate 12%": _sr12,
+          "Ledger Amount 18%": _la18,
+          "Ledger DR/CR 18%": _ldr18,
+          "IGST Rate 18%": _ir18,
+          "CGST Rate 18%": _cr18,
+          "SGST/UTGST Rate 18%": _sr18,
+          "Ledger Amount 28%": _la28,
+          "Ledger DR/CR 28%": _ldr28,
+          "IGST Rate 28%": _ir28,
+          "CGST Rate 28%": _cr28,
+          "SGST/UTGST Rate 28%": _sr28,
+          ...rest
+        },
+        idx
+      ) => ({
+        ...rest,
+        "Accept Credit":
+          mismatchedRows?.[idx]?.["Accept Credit"] ??
+          rest["Accept Credit"] ??
+          "",
+      }));
+      const mismatchedSheet = XLSX.utils.json_to_sheet(sanitizedRows);
+      XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
+      const filename = `${buildDownloadFilename(
+        "MismatchedExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      setStatus({
+        type: "success",
+        message: "Mismatched data Excel downloaded.",
+      });
+    } catch (error) {
+      console.error("Failed to download mismatched excel:", error);
       setStatus({
         type: "error",
-        message: "No mismatched rows available.",
+        message:
+          error?.response?.data?.message ||
+          "Unable to download mismatched data. Please try again.",
       });
-      return;
     }
-
-    const workbook = XLSX.utils.book_new();
-    const sanitizedRows = mismatchedRows.map(
-      ({
-        "Ledger Amount 5%": _la5,
-        "Ledger DR/CR 5%": _ldr5,
-        "IGST Rate 5%": _ir5,
-        "CGST Rate 5%": _cr5,
-        "SGST/UTGST Rate 5%": _sr5,
-        "Ledger Amount 12%": _la12,
-        "Ledger DR/CR 12%": _ldr12,
-        "IGST Rate 12%": _ir12,
-        "CGST Rate 12%": _cr12,
-        "SGST/UTGST Rate 12%": _sr12,
-        "Ledger Amount 18%": _la18,
-        "Ledger DR/CR 18%": _ldr18,
-        "IGST Rate 18%": _ir18,
-        "CGST Rate 18%": _cr18,
-        "SGST/UTGST Rate 18%": _sr18,
-        "Ledger Amount 28%": _la28,
-        "Ledger DR/CR 28%": _ldr28,
-        "IGST Rate 28%": _ir28,
-        "CGST Rate 28%": _cr28,
-        "SGST/UTGST Rate 28%": _sr28,
-        ...rest
-      }) => rest
-    );
-    const mismatchedSheet = XLSX.utils.json_to_sheet(sanitizedRows);
-    XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
-    const filename = `${sanitizeFileName(
-      doc.company || company?.companyName || "company"
-    )}-mismatched-data.xlsx`;
-    XLSX.writeFile(workbook, filename);
-    setStatus({
-      type: "success",
-      message: "Mismatched data Excel downloaded.",
-    });
   };
 
   const handleDownloadReverseChargeExcel = async () => {
@@ -854,11 +1543,14 @@ const CompanyProcessor = () => {
       }
 
       const workbook = XLSX.utils.book_new();
-      const reverseChargeSheet = XLSX.utils.json_to_sheet(reverseChargeRows);
+      const reverseChargeSheet = XLSX.utils.json_to_sheet(
+        stripMetaFields(reverseChargeRows)
+      );
       XLSX.utils.book_append_sheet(workbook, reverseChargeSheet, "Reverse Charge");
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )} - supply reverse charge.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "ReverseChargeExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
       setStatus({
         type: "success",
@@ -878,9 +1570,9 @@ const CompanyProcessor = () => {
   const handleDownloadDisallowExcel = async () => {
     if (!guardDownloads()) return;
     try {
-      // Save any pending changes first
+      await persistDisallowLedgerChanges();
       await persistProcessedLedgerChanges();
-      
+
       const doc = await ensureProcessedDoc();
       if (!doc) return;
 
@@ -897,11 +1589,14 @@ const CompanyProcessor = () => {
       }
 
       const workbook = XLSX.utils.book_new();
-      const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
+      const disallowSheet = XLSX.utils.json_to_sheet(
+        stripMetaFields(disallowRows)
+      );
       XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )} - disallow.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "DisallowExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
       setStatus({
         type: "success",
@@ -917,83 +1612,39 @@ const CompanyProcessor = () => {
       });
     }
   };
+  
 
   const handleDownloadCombinedExcel = async () => {
     if (!guardDownloads()) return;
     try {
-      // Save any pending changes for both tabs
-      await persistProcessedLedgerChanges();
-      await persistReverseChargeLedgerChanges();
-      
-      const doc = await ensureProcessedDoc();
+      const savedDoc = await persistAllLedgerChanges();
+      const doc = savedDoc || (await ensureProcessedDoc());
       if (!doc) return;
 
-      const workbook = XLSX.utils.book_new();
-      
-      // Add processed sheet
-      if (doc.processedRows?.length > 0) {
-        const processedSheet = XLSX.utils.json_to_sheet(doc.processedRows);
-        XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
-      }
-      
-      // Add mismatched sheet
-      if (doc.mismatchedRows?.length > 0) {
-        const sanitizedMismatched = doc.mismatchedRows.map(
-          ({
-            "Ledger Amount 5%": _la5,
-            "Ledger DR/CR 5%": _ldr5,
-            "IGST Rate 5%": _ir5,
-            "CGST Rate 5%": _cr5,
-            "SGST/UTGST Rate 5%": _sr5,
-            "Ledger Amount 12%": _la12,
-            "Ledger DR/CR 12%": _ldr12,
-            "IGST Rate 12%": _ir12,
-            "CGST Rate 12%": _cr12,
-            "SGST/UTGST Rate 12%": _sr12,
-            "Ledger Amount 18%": _la18,
-            "Ledger DR/CR 18%": _ldr18,
-            "IGST Rate 18%": _ir18,
-            "CGST Rate 18%": _cr18,
-            "SGST/UTGST Rate 18%": _sr18,
-            "Ledger Amount 28%": _la28,
-            "Ledger DR/CR 28%": _ldr28,
-            "IGST Rate 28%": _ir28,
-            "CGST Rate 28%": _cr28,
-            "SGST/UTGST Rate 28%": _sr28,
-            ...rest
-          }) => rest
-        );
-        const mismatchedSheet = XLSX.utils.json_to_sheet(sanitizedMismatched);
-        XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
-      }
-      
-      // Add reverse charge sheet
-      if (doc.reverseChargeRows?.length > 0) {
-        const reverseChargeSheet = XLSX.utils.json_to_sheet(doc.reverseChargeRows);
-        XLSX.utils.book_append_sheet(workbook, reverseChargeSheet, "Reverse Charge");
-      }
-      
-      // Add disallow sheet if any rows have disallow ledger names
-      const disallowRows =
+      const originalRows = await getOriginalRows();
+      const processedRowsClean = stripMetaFields(doc.processedRows || []);
+      const mismatchedRowsClean = stripMetaFields(doc.mismatchedRows || []);
+      const reverseChargeRowsClean = stripMetaFields(doc.reverseChargeRows || []);
+      const disallowSource =
         doc.disallowRows?.length > 0
           ? doc.disallowRows
           : filterDisallowRows(doc.processedRows || []);
-      if (disallowRows.length > 0) {
-        const disallowSheet = XLSX.utils.json_to_sheet(disallowRows);
-        XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
-      }
+      const disallowRowsClean = stripMetaFields(disallowSource);
 
-      if (workbook.SheetNames.length === 0) {
-        setStatus({
-          type: "error",
-          message: "No data available to download.",
-        });
-        return;
-      }
+      const workbook = buildCombinedWorkbook({
+        originalRows,
+        processedRows: processedRowsClean,
+        processedHeaders: processedColumns,
+        mismatchedRows: mismatchedRowsClean,
+        reverseChargeRows: reverseChargeRowsClean,
+        disallowRows: disallowRowsClean,
+        normalizeAcceptCreditValue,
+      });
 
-      const filename = `${sanitizeFileName(
-        doc.company || company?.companyName || "company"
-      )} - combined.xlsx`;
+      const filename = `${buildDownloadFilename(
+        "CombinedExcel",
+        doc.company || company?.companyName
+      )}.xlsx`;
       XLSX.writeFile(workbook, filename);
       setStatus({
         type: "success",
@@ -1058,7 +1709,7 @@ const CompanyProcessor = () => {
 
   return (
     <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+      className="min-h-screen bg-linear-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
@@ -1171,13 +1822,13 @@ const CompanyProcessor = () => {
                 Download GSTR-2B Excel
               </button>
               <button
-                onClick={handleDownloadProcessedExcel}
-                disabled={!downloadsUnlocked}
-                className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <FiDownload />
-                Tally Map Excel
-              </button>
+              onClick={handleDownloadProcessedExcel}
+              disabled={!downloadsUnlocked}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <FiDownload />
+              TallyProcessedExcel
+            </button>
               <button
                 onClick={handleDownloadMismatchedExcel}
                 disabled={!downloadsUnlocked}
@@ -1228,7 +1879,7 @@ const CompanyProcessor = () => {
               <ol className="list-decimal list-inside text-xs text-slate-600 space-y-1">
                 <li>Click “Process Sheet” once your file is uploaded.</li>
                 <li>
-                  When processing finishes, Tally Map & Mismatched buttons will
+                  When processing finishes, TallyProcessedExcel & Mismatched buttons will
                   turn solid and become clickable.
                 </li>
               </ol>
@@ -1237,15 +1888,17 @@ const CompanyProcessor = () => {
             {processedDoc ? (
               <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
                 Stored {processedDoc.processedRows?.length || 0} matched rows,{" "}
-                {processedDoc.mismatchedRows?.length || 0} mismatched rows, and{" "}
-                {processedDoc.reverseChargeRows?.length || 0} reverse charge rows for{" "}
-                {processedDoc.company || "company"}.
+                {processedDoc.mismatchedRows?.length || 0} mismatched rows,{" "}
+                {processedDoc.reverseChargeRows?.length || 0} reverse charge rows, and{" "}
+                {(processedDoc.disallowRows?.length ||
+                  filterDisallowRows(processedDoc.processedRows || []).length) || 0}{" "}
+                disallow rows for {processedDoc.company || "company"}.
               </div>
             ) : null}
           </motion.section>
         ) : null}
 
-        {(hasProcessedRows || hasReverseChargeRows) ? (
+        {(hasProcessedRows || hasReverseChargeRows || hasMismatchedRows || hasDisallowRows) ? (
           <motion.section
             className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
             initial={{ y: 20, opacity: 0 }}
@@ -1254,7 +1907,7 @@ const CompanyProcessor = () => {
             {missingSuppliers.length > 0 ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
                 <div className="flex items-start gap-2">
-                  <FiAlertCircle className="text-amber-600 mt-0.5 flex-shrink-0" size={18} />
+                  <FiAlertCircle className="text-amber-600 mt-0.5 shrink-0" size={18} />
                   <div className="flex-1">
                     <h4 className="text-sm font-semibold text-amber-900 mb-1">
                       Missing from Party Master
@@ -1282,37 +1935,36 @@ const CompanyProcessor = () => {
               </div>
             ) : null}
             {/* Tabs */}
-            <div className="flex gap-2 border-b border-amber-200">
-              <button
-                type="button"
-                onClick={() => setActiveTab("processed")}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-                  activeTab === "processed"
-                    ? "border-amber-500 text-amber-700"
-                    : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                Processed Rows ({processedRows.length})
-              </button>
-              {hasReverseChargeRows && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("reverseCharge")}
-                  className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-                    activeTab === "reverseCharge"
-                      ? "border-purple-500 text-purple-700"
-                      : "border-transparent text-slate-500 hover:text-slate-700"
-                  }`}
-                >
-                  Reverse Charge Rows ({reverseChargeRows.length})
-                </button>
-              )}
+            <div className="flex flex-wrap gap-2 border-b border-amber-200">
+              {tabOrder.map((key) => {
+                const config = tabConfigs[key];
+                if (!config) return null;
+                const isActive = activeTab === key;
+                const activeClass =
+                  tabActiveClasses[key] ||
+                  "border-amber-500 text-amber-700";
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveTab(key)}
+                    className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                      isActive
+                        ? activeClass
+                        : "border-transparent text-slate-500 hover:text-slate-700"
+                    } ${config.hasRows ? "" : "opacity-50 cursor-not-allowed"}`}
+                    disabled={!config.hasRows}
+                  >
+                    {config.label} ({config.count})
+                  </button>
+                );
+              })}
             </div>
 
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <h3 className="text-xl font-semibold text-slate-900">
-                  {activeTab === "processed" ? "Review Processed Rows" : "Review Reverse Charge Rows"}
+                  {`Review ${activeLabel}`}
                 </h3>
                 <p className="text-sm text-slate-600">
                   Click the Ledger Name column to pick from saved ledgers or type to
@@ -1342,19 +1994,10 @@ const CompanyProcessor = () => {
                 <button
                   type="button"
                   onClick={handleSaveLedgerNames}
-                  disabled={
-                    (activeTab === "processed" 
-                      ? !processedLedgerDirtyCount 
-                      : !reverseChargeLedgerDirtyCount) || 
-                    (activeTab === "processed" 
-                      ? savingProcessedLedgerChanges 
-                      : savingReverseChargeLedgerChanges)
-                  }
+                  disabled={!activeHasRows || !activeDirtyCount || activeSaving}
                   className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {(activeTab === "processed" 
-                    ? savingProcessedLedgerChanges 
-                    : savingReverseChargeLedgerChanges) ? (
+                  {activeSaving ? (
                     <>
                       <FiRefreshCw className="animate-spin" />
                       Saving...
@@ -1362,17 +2005,11 @@ const CompanyProcessor = () => {
                   ) : (
                     <>
                       <FiSave />
-                      {activeTab === "processed"
-                        ? (processedLedgerDirtyCount
-                            ? `Save ${processedLedgerDirtyCount} change${
-                                processedLedgerDirtyCount > 1 ? "s" : ""
-                              }`
-                            : "Save ledger names")
-                        : (reverseChargeLedgerDirtyCount
-                            ? `Save ${reverseChargeLedgerDirtyCount} change${
-                                reverseChargeLedgerDirtyCount > 1 ? "s" : ""
-                              }`
-                            : "Save ledger names")}
+                      {activeDirtyCount
+                        ? `Save ${activeDirtyCount} change${
+                            activeDirtyCount > 1 ? "s" : ""
+                          }`
+                        : "Save ledger names"}
                     </>
                   )}
                 </button>
@@ -1387,7 +2024,7 @@ const CompanyProcessor = () => {
               <table className="min-w-full text-xs text-slate-700">
                 <thead className="sticky top-0 bg-white">
                   <tr>
-                    {(activeTab === "processed" ? processedColumns : reverseChargeColumns).map((column) => (
+                    {activeColumns.map((column) => (
                       <th
                         key={column}
                         className="px-2 py-2 text-left font-semibold border-b border-amber-100"
@@ -1398,15 +2035,11 @@ const CompanyProcessor = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {(activeTab === "processed" ? processedRows : reverseChargeRows).map((row, rowIdx) => {
+                  {activeRows.map((row, rowIdx) => {
                     const rowKey = getRowKey(row, rowIdx);
-                    const ledgerValue = (activeTab === "processed" 
-                      ? processedLedgerInputs 
-                      : reverseChargeLedgerInputs)[rowKey] ?? "";
-                    const handleChange = activeTab === "processed"
-                      ? handleProcessedLedgerInputChange
-                      : handleReverseChargeLedgerInputChange;
-                    const columns = activeTab === "processed" ? processedColumns : reverseChargeColumns;
+                    const ledgerValue = activeLedgerInputs[rowKey] ?? "";
+                    const handleChange = activeHandleChange;
+                    const columns = activeColumns;
                     return (
                       <tr
                         key={rowKey}
@@ -1446,6 +2079,94 @@ const CompanyProcessor = () => {
                                     }
                                   }}
                                 />
+                              ) : isMismatchedTab &&
+                                column === "Accept Credit" ? (
+                                <select
+                                  value={
+                                    Object.prototype.hasOwnProperty.call(
+                                      acceptCreditDrafts,
+                                      rowKey
+                                    )
+                                      ? acceptCreditDrafts[rowKey] ?? ""
+                                      : row?.["Accept Credit"] ?? ""
+                                  }
+                                  onChange={(event) =>
+                                    handleAcceptCreditChange(
+                                      rowKey,
+                                      event.target.value
+                                    )
+                                  }
+                                  className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                >
+                                  <option value="">Select</option>
+                                  <option value="Yes">Yes</option>
+                                  <option value="No">No</option>
+                                </select>
+                              ) : column === "Accept Credit" ? (
+                                renderAcceptCreditBadge(
+                                  Object.prototype.hasOwnProperty.call(
+                                    acceptCreditDrafts,
+                                    rowKey
+                                  )
+                                    ? acceptCreditDrafts[rowKey]
+                                    : row?.[column]
+                                )
+                              ) : column === "Action" ? (
+                                <select
+                                  value={
+                                    Object.prototype.hasOwnProperty.call(
+                                      actionDrafts,
+                                      rowKey
+                                    )
+                                      ? actionDrafts[rowKey] ?? ""
+                                      : row?.Action ?? ""
+                                  }
+                                  onChange={(event) =>
+                                    handleActionChange(
+                                      activeConfig.key,
+                                      rowKey,
+                                      event.target.value
+                                    )
+                                  }
+                                  className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                >
+                                  <option value="">Select</option>
+                                  {ACTION_OPTIONS.map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : column === "Action Reason" ? (
+                                (() => {
+                                  const actionValue = getActionValueForRow(row, rowKey);
+                                  const shouldShow = actionValue === "Reject" || actionValue === "Pending";
+                                  if (!shouldShow) {
+                                    return <span className="text-slate-400">—</span>;
+                                  }
+                                  const hasDraft = Object.prototype.hasOwnProperty.call(
+                                    actionReasonDrafts,
+                                    rowKey
+                                  );
+                                  const draftValue = hasDraft ? actionReasonDrafts[rowKey] : undefined;
+                                  const currentValue =
+                                    draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+                                  return (
+                                    <input
+                                      type="text"
+                                      value={currentValue}
+                                      onChange={(event) =>
+                                        handleActionReasonChange(
+                                          activeConfig.key,
+                                          rowKey,
+                                          event.target.value
+                                        )
+                                      }
+                                      placeholder="Enter reason..."
+                                      className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                    />
+                                  );
+                                })()
                               ) : (
                                 <span>{toDisplayValue(row?.[column])}</span>
                               )}

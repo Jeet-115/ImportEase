@@ -25,9 +25,11 @@ const useLedgerNameEditing = ({
   onUpdated,
   updateFunction, // Optional custom update function
   rowsKey = "processedRows", // Key to get rows from updated response
+  getRowPayload,
 }) => {
   const [inputs, setInputs] = useState({});
   const [dirtyRows, setDirtyRows] = useState(new Set());
+  const [extraDirtyRows, setExtraDirtyRows] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [savedMap, setSavedMap] = useState({});
   const savedMapRef = useRef(savedMap);
@@ -37,10 +39,9 @@ const useLedgerNameEditing = ({
     rows.forEach((row, idx) => {
       meta[getRowKey(row, idx)] = {
         slNo:
-          row?.slNo !== undefined && row?.slNo !== null
-            ? row.slNo
-            : undefined,
+          row?.slNo !== undefined && row?.slNo !== null ? row.slNo : undefined,
         index: idx,
+        row,
       };
     });
     return meta;
@@ -55,6 +56,7 @@ const useLedgerNameEditing = ({
     setSavedMap(initialInputs);
     savedMapRef.current = initialInputs;
     setDirtyRows(new Set());
+    setExtraDirtyRows(new Set());
   }, [rows, getRowKey]);
 
   useEffect(() => {
@@ -78,18 +80,41 @@ const useLedgerNameEditing = ({
     });
   }, []);
 
+  const setExtraRowDirtyState = useCallback((rowKey, isDirty) => {
+    setExtraDirtyRows((prev) => {
+      const next = new Set(prev);
+      if (isDirty) {
+        next.add(rowKey);
+      } else {
+        next.delete(rowKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const combinedDirtyRows = useMemo(() => {
+    const combined = new Set(dirtyRows);
+    extraDirtyRows.forEach((key) => combined.add(key));
+    return combined;
+  }, [dirtyRows, extraDirtyRows]);
+
   const persistChanges = useCallback(async () => {
-    if (!dirtyRows.size || !importId) {
+    if (!combinedDirtyRows.size || !importId) {
       return null;
     }
-    const payloadRows = Array.from(dirtyRows)
+    const payloadRows = Array.from(combinedDirtyRows)
       .map((rowKey) => {
         const meta = rowMeta[rowKey];
         if (!meta) return null;
+        const extraPayload =
+          typeof getRowPayload === "function"
+            ? getRowPayload(meta.row, rowKey)
+            : {};
         return {
           slNo: meta.slNo,
           index: meta.index,
           ledgerName: trimOrNull(inputs[rowKey]),
+          ...extraPayload,
         };
       })
       .filter(Boolean);
@@ -139,6 +164,7 @@ const useLedgerNameEditing = ({
       setSavedMap(refreshedInputs);
       savedMapRef.current = refreshedInputs;
       setDirtyRows(new Set());
+      setExtraDirtyRows(new Set());
       return processed;
     } catch (error) {
       console.error("Failed to persist ledger changes:", error);
@@ -154,14 +180,26 @@ const useLedgerNameEditing = ({
     } finally {
       setSaving(false);
     }
-  }, [dirtyRows, importId, inputs, onUpdated, rowMeta, rows, getRowKey, updateFunction, rowsKey]);
+  }, [
+    combinedDirtyRows,
+    importId,
+    inputs,
+    onUpdated,
+    rowMeta,
+    rows,
+    getRowKey,
+    updateFunction,
+    rowsKey,
+    getRowPayload,
+  ]);
 
   return {
     ledgerInputs: inputs,
     handleLedgerInputChange: handleChange,
-    dirtyCount: dirtyRows.size,
+    dirtyCount: combinedDirtyRows.size,
     persistLedgerChanges: persistChanges,
     savingLedgerChanges: saving,
+    setExtraRowDirtyState,
   };
 };
 

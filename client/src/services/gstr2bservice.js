@@ -35,3 +35,9 @@ export const updateProcessedLedgerNames = (id, payload) =>
 export const updateReverseChargeLedgerNames = (id, payload) =>
   axiosInstance.put(`/api/gstr2b-imports/${id}/processed/reverse-charge/ledger-names`, payload);
 
+export const updateMismatchedLedgerNames = (id, payload) =>
+  axiosInstance.put(`/api/gstr2b-imports/${id}/processed/mismatched/ledger-names`, payload);
+
+export const updateDisallowLedgerNames = (id, payload) =>
+  axiosInstance.put(`/api/gstr2b-imports/${id}/processed/disallow/ledger-names`, payload);
+
