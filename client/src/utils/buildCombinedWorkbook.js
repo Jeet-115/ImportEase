@@ -64,20 +64,6 @@ const createRowSkeleton = (headers = []) => {
   return skeleton;
 };
 
-const assignSupplierAmount = (row, value, headers = []) => {
-  if (headers.includes("supplierAmount")) {
-    row.supplierAmount = value;
-  } else if (headers.includes("Supplier Amount")) {
-    row["Supplier Amount"] = value;
-  } else if (headers.includes("invoiceAmount")) {
-    row.invoiceAmount = value;
-  } else if (headers.includes("Invoice Amount")) {
-    row["Invoice Amount"] = value;
-  } else {
-    row.Total = value;
-  }
-};
-
 const COLOR_MAP = {
   green: "FFE4F8E5",
   orange: "FFFFEAD6",
@@ -187,7 +173,7 @@ export const buildCombinedWorkbook = ({
   if (!reorderedHeaders.includes("GSTR-2B Taxable Value")) {
     additionalHeaders.push("GSTR-2B Taxable Value");
   }
-  const masterHeaders = ["Category", ...reorderedHeaders, ...additionalHeaders];
+  let masterHeaders = ["Category", ...reorderedHeaders, ...additionalHeaders];
 
   const mapRowWithCategory = (row, categoryLabel) => {
     const mapped = createRowSkeleton(masterHeaders);
@@ -396,7 +382,6 @@ export const buildCombinedWorkbook = ({
     masterRows.push({ Category: "" });
   }
 
-  // Create compact totals table - add totals columns to master headers if not present
   const totalsColumnNames = [
     "GSTR-2B Invoice",
     "GSTR-2B Taxable",
@@ -408,54 +393,23 @@ export const buildCombinedWorkbook = ({
     "Invoice Amount",
   ];
 
-  totalsColumnNames.forEach((colName) => {
-    if (!masterHeaders.includes(colName)) {
-      masterHeaders.push(colName);
-    }
-  });
+  const assignCompactTotals = (totals) => [
+    totals.gstr2bInvoiceTotal || 0,
+    totals.taxableValueTotal || 0,
+    totals.igstTotal || 0,
+    totals.cgstTotal || 0,
+    totals.sgstTotal || 0,
+    totals.cessTotal || 0,
+    totals.supplierAmountTotal || 0,
+    totals.invoiceAmountTotal || 0,
+  ];
 
-  // Helper to assign totals to row in compact format
-  const assignCompactTotals = (row, totals) => {
-    row["GSTR-2B Invoice"] = totals.gstr2bInvoiceTotal || 0;
-    row["GSTR-2B Taxable"] = totals.taxableValueTotal || 0;
-    row["IGST Total"] = totals.igstTotal || 0;
-    row["CGST Total"] = totals.cgstTotal || 0;
-    row["SGST Total"] = totals.sgstTotal || 0;
-    row["CESS Total"] = totals.cessTotal || 0;
-    row["Supplier Amount"] = totals.supplierAmountTotal || 0;
-    row["Invoice Amount"] = totals.invoiceAmountTotal || 0;
-  };
-
-  // Add header row for totals table (just above the totals rows, with empty Category)
-  const totalsHeaderRow = createRowSkeleton(masterHeaders);
-  totalsHeaderRow.Category = ""; // Empty category, headers will be in totals columns
-  totalsColumnNames.forEach((colName) => {
-    totalsHeaderRow[colName] = colName;
-  });
-  masterRows.push(totalsHeaderRow);
-
-  // Add totals for each category
   const categoryTotals = [
     { label: "Green Total", totals: greenTotals, color: COLOR_MAP.green },
     { label: "Orange Total", totals: orangeTotals, color: COLOR_MAP.orange },
     { label: "Purple Total", totals: purpleTotals, color: COLOR_MAP.purple },
     { label: "Red Total", totals: redTotals, color: COLOR_MAP.red },
   ];
-
-  categoryTotals.forEach((entry) => {
-    const row = createRowSkeleton(masterHeaders);
-    row.Category = entry.label;
-    assignCompactTotals(row, entry.totals);
-    masterRowStyles.set(masterRows.length, entry.color);
-    masterRows.push(row);
-  });
-
-  // Add grand total
-  const grandRow = createRowSkeleton(masterHeaders);
-  grandRow.Category = "Grand Total";
-  assignCompactTotals(grandRow, grandTotals);
-  masterRowStyles.set(masterRows.length, COLOR_MAP.grand);
-  masterRows.push(grandRow);
 
   const actionTotals = [
     { key: "Accept", label: "Action Accept Total", color: COLOR_MAP.accept },
@@ -498,23 +452,49 @@ export const buildCombinedWorkbook = ({
     0
   );
   masterRows.push({ Category: "" });
-  actionTotalsWithValues.forEach((entry) => {
-    const row = createRowSkeleton(masterHeaders);
-    row.Category = entry.label;
-    assignSupplierAmount(row, entry.value, masterHeaders);
-    masterRowStyles.set(masterRows.length, entry.color);
-    masterRows.push(row);
-  });
-  const actionGrandRow = createRowSkeleton(masterHeaders);
-  actionGrandRow.Category = "Action Grand Total";
-  assignSupplierAmount(actionGrandRow, actionGrandTotal, masterHeaders);
-  masterRowStyles.set(masterRows.length, COLOR_MAP.actionGrand);
-  masterRows.push(actionGrandRow);
 
   const masterSheet = createSheetFromRows(masterRows, masterHeaders);
   masterRowStyles.forEach((color, rowIndex) => {
     applyRowStyle(masterSheet, masterHeaders, rowIndex, color);
   });
+
+  const additionalAoA = [];
+  const additionalRowStyles = [];
+
+  additionalAoA.push(["", ...totalsColumnNames]);
+  additionalRowStyles.push(null);
+
+  categoryTotals.forEach((entry) => {
+    additionalAoA.push([entry.label, ...assignCompactTotals(entry.totals)]);
+    additionalRowStyles.push(entry.color);
+  });
+
+  additionalAoA.push(["Grand Total", ...assignCompactTotals(grandTotals)]);
+  additionalRowStyles.push(COLOR_MAP.grand);
+
+  additionalAoA.push([]);
+  additionalRowStyles.push(null);
+
+  additionalAoA.push(["Action Category", "Amount"]);
+  additionalRowStyles.push(null);
+
+  actionTotalsWithValues.forEach((entry) => {
+    additionalAoA.push([entry.label, entry.value || 0]);
+    additionalRowStyles.push(entry.color);
+  });
+  additionalAoA.push(["Action Grand Total", actionGrandTotal || 0]);
+  additionalRowStyles.push(COLOR_MAP.actionGrand);
+
+  if (additionalAoA.length) {
+    const originRow = masterRows.length + 1;
+    XLSX.utils.sheet_add_aoa(masterSheet, additionalAoA, {
+      origin: { r: originRow, c: 0 },
+    });
+    additionalRowStyles.forEach((color, idx) => {
+      if (!color) return;
+      applyRowStyle(masterSheet, masterHeaders, masterRows.length + idx, color);
+    });
+  }
   XLSX.utils.book_append_sheet(workbook, masterSheet, "Master");
 
   // Helper function to ensure columns are in headers
