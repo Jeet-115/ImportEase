@@ -181,19 +181,94 @@ const formatGenericCell = (cell) => {
   return stringValue.length ? stringValue : null;
 };
 
-const findHeaderRowIndex = (rows = []) => {
-  if (
-    rows.length > ADDITIONAL_HEADER_ROW_INDEX &&
-    !isRowEmpty(rows[ADDITIONAL_HEADER_ROW_INDEX])
-  ) {
-    return ADDITIONAL_HEADER_ROW_INDEX;
-  }
-  for (let idx = 0; idx < rows.length; idx += 1) {
-    if (!isRowEmpty(rows[idx])) {
-      return idx;
+// Detect if a row has meaningful header content
+const hasHeaderContent = (row) => {
+  if (!row || !Array.isArray(row)) return false;
+  const nonEmptyCount = row.filter(
+    (cell) => cell !== null && cell !== undefined && String(cell).trim().length > 0
+  ).length;
+  return nonEmptyCount >= 3; // At least 3 non-empty cells to be considered a header row
+};
+
+// Find header and sub-header rows (checking rows 5-6 or 6-7, 0-indexed: 4-5 or 5-6)
+const findHeaderRows = (rows = []) => {
+  // Try rows 5-6 first (0-indexed: 4-5)
+  if (rows.length > 5) {
+    const row5 = rows[4] || [];
+    const row6 = rows[5] || [];
+    if (hasHeaderContent(row5) && hasHeaderContent(row6)) {
+      return { mainHeaderRow: 4, subHeaderRow: 5 };
+    }
+    if (hasHeaderContent(row5)) {
+      // Only main header row found
+      return { mainHeaderRow: 4, subHeaderRow: null };
     }
   }
-  return -1;
+  
+  // Try rows 6-7 (0-indexed: 5-6)
+  if (rows.length > 6) {
+    const row6 = rows[5] || [];
+    const row7 = rows[6] || [];
+    if (hasHeaderContent(row6) && hasHeaderContent(row7)) {
+      return { mainHeaderRow: 5, subHeaderRow: 6 };
+    }
+    if (hasHeaderContent(row6)) {
+      return { mainHeaderRow: 5, subHeaderRow: null };
+    }
+  }
+  
+  // Fallback: find first non-empty row
+  for (let idx = 0; idx < Math.min(10, rows.length); idx += 1) {
+    if (hasHeaderContent(rows[idx])) {
+      // Check if next row also has content (could be sub-header)
+      if (idx + 1 < rows.length && hasHeaderContent(rows[idx + 1])) {
+        return { mainHeaderRow: idx, subHeaderRow: idx + 1 };
+      }
+      return { mainHeaderRow: idx, subHeaderRow: null };
+    }
+  }
+  
+  return null;
+};
+
+// Combine main header and sub-header, handling merged cells
+// When main header is empty in a cell, it means it's merged from previous cell
+const combineHeaders = (mainHeaderRow, subHeaderRow, maxCols) => {
+  const headers = [];
+  let currentMainHeader = null;
+  
+  for (let colIdx = 0; colIdx < maxCols; colIdx += 1) {
+    const mainCell = mainHeaderRow?.[colIdx];
+    const subCell = subHeaderRow?.[colIdx];
+    
+    const mainValue = formatGenericCell(mainCell);
+    const subValue = formatGenericCell(subCell);
+    
+    // If main header exists (not empty), update current main header
+    // Empty cells in main header row indicate merged cells - keep using previous main header
+    if (mainValue) {
+      currentMainHeader = mainValue;
+    }
+    
+    // If sub-header exists, combine with main header
+    if (subValue) {
+      if (currentMainHeader && currentMainHeader !== subValue) {
+        // Only combine if they're different (avoid "Tax Amount(Tax Amount)")
+        headers.push(`${subValue}(${currentMainHeader})`);
+      } else {
+        // If same or no main header, just use sub-header
+        headers.push(subValue);
+      }
+    } else if (currentMainHeader) {
+      // Only main header, no sub-header
+      headers.push(currentMainHeader);
+    } else {
+      // No header at all
+      headers.push(`Column ${colIdx + 1}`);
+    }
+  }
+  
+  return headers;
 };
 
 const parseAdditionalSheet = (sheet) => {
@@ -202,20 +277,40 @@ const parseAdditionalSheet = (sheet) => {
     raw: true,
     defval: null,
   });
+  
   if (!rows.length) {
     return null;
   }
-  const headerRowIndex = findHeaderRowIndex(rows);
-  if (headerRowIndex === -1) {
+  
+  const headerInfo = findHeaderRows(rows);
+  if (!headerInfo) {
     return null;
   }
-  const headerRow = rows[headerRowIndex] || [];
-  const headers = headerRow.map((cell, idx) => {
-    const value = formatGenericCell(cell);
-    return value ?? `Column ${idx + 1}`;
-  });
+  
+  const { mainHeaderRow: mainIdx, subHeaderRow: subIdx } = headerInfo;
+  const mainHeaderRow = rows[mainIdx] || [];
+  const subHeaderRow = subIdx !== null ? (rows[subIdx] || []) : null;
+  
+  // Determine max columns by finding the longest row
+  const maxCols = Math.max(
+    mainHeaderRow.length,
+    subHeaderRow ? subHeaderRow.length : 0,
+    ...rows.slice(Math.max(mainIdx, subIdx !== null ? subIdx : mainIdx) + 1).map(r => r?.length || 0)
+  );
+  
+  // Combine headers
+  const headers = subHeaderRow
+    ? combineHeaders(mainHeaderRow, subHeaderRow, maxCols)
+    : mainHeaderRow.map((cell, idx) => {
+        const value = formatGenericCell(cell);
+        return value ?? `Column ${idx + 1}`;
+      });
+  
+  // Determine data start row (after sub-header if exists, otherwise after main header)
+  const dataStartRow = subIdx !== null ? subIdx + 1 : mainIdx + 1;
+  
   const dataRows = rows
-    .slice(headerRowIndex + 1)
+    .slice(dataStartRow)
     .map((row) => {
       const record = {};
       headers.forEach((header, idx) => {
