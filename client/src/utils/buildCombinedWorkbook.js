@@ -77,6 +77,23 @@ const COLOR_MAP = {
   actionGrand: "FFE3F0FF",
 };
 
+// Disallow ledger names that should be separated into a disallow sheet
+const DISALLOW_LEDGER_NAMES = [
+  "Penalty [disallow]",
+  "Repair of Vehicle [disallow]",
+  "Insurance of Vehicle [disallow]",
+  "Festival Exp. [disallow]",
+];
+
+const DISALLOW_LEDGER_SET = new Set(
+  DISALLOW_LEDGER_NAMES.map((name) => name.toLowerCase())
+);
+
+const isDisallowLedger = (ledgerName) => {
+  if (!ledgerName) return false;
+  return DISALLOW_LEDGER_SET.has(String(ledgerName).trim().toLowerCase());
+};
+
 const normalizeActionValue = (value) => {
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
@@ -173,6 +190,9 @@ export const buildCombinedWorkbook = ({
   if (!reorderedHeaders.includes("GSTR-2B Taxable Value")) {
     additionalHeaders.push("GSTR-2B Taxable Value");
   }
+  if (!reorderedHeaders.includes("ITC Availability")) {
+    additionalHeaders.push("ITC Availability");
+  }
   let masterHeaders = ["Category", ...reorderedHeaders, ...additionalHeaders];
 
   const mapRowWithCategory = (row, categoryLabel) => {
@@ -199,15 +219,44 @@ export const buildCombinedWorkbook = ({
 
   const greenRows = [];
   const orangeRows = [];
-  const purpleRows = reverseChargeRows.slice();
+  const purpleRows = [];
   const redRows = disallowRows.slice();
+  const redSignatureSet = new Set(disallowRows.map((row) => buildRowSignature(row)));
 
   const greenSignatureSet = new Set();
+
+  // First, filter RCM rows - move disallow ledger names or ITC Availability = "No" to redRows
+  reverseChargeRows.forEach((row) => {
+    const sig = buildRowSignature(row);
+    const ledgerName = row?.["Ledger Name"];
+    const itcAvailability = row?.["ITC Availability"];
+    const isItcNo = itcAvailability === "No";
+    
+    if (isDisallowLedger(ledgerName) || isItcNo) {
+      // Move to disallow rows if not already there
+      if (!redSignatureSet.has(sig)) {
+        redRows.push(row);
+        redSignatureSet.add(sig);
+      }
+    } else {
+      purpleRows.push(row);
+    }
+  });
 
   processedRows.forEach((row) => {
     const sig = buildRowSignature(row);
     const acceptStatus = mismatchedAcceptStatus.get(sig);
     const isOrange = acceptStatus === "No" || (!acceptStatus && mismatchedAcceptStatus.has(sig));
+    const itcAvailability = row?.["ITC Availability"];
+    const isItcNo = itcAvailability === "No";
+    
+    // Move ITC Availability = "No" rows to disallow rows
+    if (isItcNo && !redSignatureSet.has(sig)) {
+      redRows.push(row);
+      redSignatureSet.add(sig);
+      return;
+    }
+    
     if (disallowSignatures.has(sig) || reverseSignatures.has(sig) || isOrange) {
       return;
     }
@@ -218,6 +267,20 @@ export const buildCombinedWorkbook = ({
   mismatchedRows.forEach((row) => {
     const normalized = normalizeAcceptCreditValue(row?.["Accept Credit"]);
     const sig = buildRowSignature(row);
+    const ledgerName = row?.["Ledger Name"];
+    const itcAvailability = row?.["ITC Availability"];
+    const isItcNo = itcAvailability === "No";
+    
+    // Check if this mismatched row has ITC Availability = "No" or disallow ledger name
+    if (isItcNo || isDisallowLedger(ledgerName)) {
+      // Move to disallow rows if not already there
+      if (!redSignatureSet.has(sig)) {
+        redRows.push(row);
+        redSignatureSet.add(sig);
+      }
+      return; // Don't add to green or orange
+    }
+    
     if (normalized === "Yes" && !greenSignatureSet.has(sig)) {
       greenRows.push(row);
       greenSignatureSet.add(sig);
@@ -226,6 +289,14 @@ export const buildCombinedWorkbook = ({
 
   mismatchedRows.forEach((row) => {
     const normalized = normalizeAcceptCreditValue(row?.["Accept Credit"]);
+    const sig = buildRowSignature(row);
+    const ledgerName = row?.["Ledger Name"];
+    
+    // Skip if already moved to disallow rows
+    if (isDisallowLedger(ledgerName) || redSignatureSet.has(sig)) {
+      return;
+    }
+    
     if (normalized === "No" || !normalized) {
       orangeRows.push(row);
     }

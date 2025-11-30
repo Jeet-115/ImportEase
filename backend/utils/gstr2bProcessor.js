@@ -179,6 +179,17 @@ const processRowWithMap = (row, index, gstStateMap, reverseChargeLabel = null) =
       ? String(row.invoiceDate).trim()
       : null;
 
+  // Normalize ITC Availability value
+  const normalizeItcAvailability = (value) => {
+    if (value === null || value === undefined) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (lower === "yes" || lower === "y") return "Yes";
+    if (lower === "no" || lower === "n") return "No";
+    return trimmed; // Return original if not Yes/No
+  };
+
   const base = {
     _sourceRowId: index,
     slNo: index + 1,
@@ -198,6 +209,7 @@ const processRowWithMap = (row, index, gstStateMap, reverseChargeLabel = null) =
     "GSTR-1/1A/IFF/GSTR-5 Filing Date": formatDisplayDate(row?.gstrFilingDate),
     "GSTR-2B Invoice Value": invoiceValue || null,
     "GSTR-2B Taxable Value": taxableValue || null,
+    "ITC Availability": normalizeItcAvailability(row?.itcAvailability),
     [LEDGER_NAME_COLUMN]: null,
     ...initializeLedgerFields(),
     "Custom Ledger Amount": null,
@@ -297,6 +309,7 @@ export const processRows = async (rows) => {
   const processedRows = [];
   const mismatchedRows = [];
   const reverseChargeRows = [];
+  const itcNoRows = []; // Rows with ITC Availability = "No"
 
   rows.forEach((row, index) => {
     // Check if this row has reverse charge = "yes"
@@ -320,6 +333,10 @@ export const processRows = async (rows) => {
       reverseChargeLabel
     );
 
+    // Check if ITC Availability is "No"
+    const itcAvailability = record?.["ITC Availability"];
+    const isItcNo = itcAvailability === "No";
+
     processedRows.push(record);
     if (isMismatched) {
       mismatchedRows.push(record);
@@ -327,10 +344,13 @@ export const processRows = async (rows) => {
     if (isReverseCharge) {
       reverseChargeRows.push(record);
     }
+    if (isItcNo) {
+      itcNoRows.push(record);
+    }
   });
   
   console.log(
-    `Processing complete: ${reverseChargeRows.length} reverse charge rows, ${processedRows.length} processed rows (including mismatches), ${mismatchedRows.length} mismatched rows`
+    `Processing complete: ${reverseChargeRows.length} reverse charge rows, ${processedRows.length} processed rows (including mismatches), ${mismatchedRows.length} mismatched rows, ${itcNoRows.length} ITC Availability = No rows`
   );
 
   const renumber = (list) =>
@@ -343,6 +363,7 @@ export const processRows = async (rows) => {
     processedRows: renumber(processedRows),
     mismatchedRows: renumber(mismatchedRows),
     reverseChargeRows: renumber(reverseChargeRows),
+    itcNoRows: renumber(itcNoRows),
   };
 };
 
@@ -351,8 +372,53 @@ export const processAndStoreDocument = async (doc) => {
   const rows = Array.isArray(doc.rows) ? doc.rows : [];
   if (!rows.length) return null;
 
-  const { processedRows, mismatchedRows, reverseChargeRows } =
+  const { processedRows, mismatchedRows, reverseChargeRows, itcNoRows } =
     await processRows(rows);
+
+  // Combine existing disallow rows with ITC Availability = "No" rows
+  const existingDisallowRows = Array.isArray(doc.disallowRows) ? doc.disallowRows : [];
+  // Use a Set to track signatures and avoid duplicates
+  // Build signature similar to buildRowSignature: referenceNo, supplierName, gstinUin, invoiceNumber, supplierAmount
+  const getFirstValue = (row, keys) => {
+    for (const key of keys) {
+      if (row?.[key] !== undefined && row?.[key] !== null) {
+        return row[key];
+      }
+    }
+    return "";
+  };
+  
+  const buildRowSig = (row) => {
+    const refNo = getFirstValue(row, ["referenceNo", "Reference No.", "vchNo", "Vch No"]);
+    const supplier = getFirstValue(row, ["supplierName", "Supplier Name"]);
+    const gstin = getFirstValue(row, ["gstinUin", "GSTIN/UIN", "gstin", "GSTIN"]);
+    const invNo = getFirstValue(row, ["invoiceNumber", "Invoice Number"]);
+    const amount = getFirstValue(row, ["supplierAmount", "Supplier Amount", "invoiceAmount", "Invoice Amount"]);
+    return [refNo, supplier, gstin, invNo, amount]
+      .map((value) => (value !== undefined && value !== null ? String(value) : ""))
+      .join("::");
+  };
+  
+  const disallowSignatures = new Set();
+  const combinedDisallowRows = [];
+
+  // Add existing disallow rows
+  existingDisallowRows.forEach((row) => {
+    const sig = buildRowSig(row);
+    if (!disallowSignatures.has(sig)) {
+      disallowSignatures.add(sig);
+      combinedDisallowRows.push(row);
+    }
+  });
+
+  // Add ITC Availability = "No" rows (avoiding duplicates)
+  itcNoRows.forEach((row) => {
+    const sig = buildRowSig(row);
+    if (!disallowSignatures.has(sig)) {
+      disallowSignatures.add(sig);
+      combinedDisallowRows.push(row);
+    }
+  });
 
   const payload = {
     _id: doc._id,
@@ -361,7 +427,7 @@ export const processAndStoreDocument = async (doc) => {
     processedRows,
     mismatchedRows,
     reverseChargeRows: reverseChargeRows || [],
-    disallowRows: Array.isArray(doc.disallowRows) ? doc.disallowRows : [],
+    disallowRows: combinedDisallowRows,
     processedAt: new Date(),
   };
 

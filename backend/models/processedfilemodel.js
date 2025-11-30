@@ -727,3 +727,15 @@ export const updateDisallowLedgerNames = async (id, rows = []) =>
     return { nextData, result: updated };
   });
 
+export const deleteById = async (id) =>
+  mutateCollection(COLLECTION_KEY, (entries) => {
+    const index = entries.findIndex((entry) => entry._id === id);
+    if (index === -1) {
+      return { nextData: entries, result: null, skipWrite: true };
+    }
+
+    const deleted = entries[index];
+    const nextData = entries.filter((_, idx) => idx !== index);
+    return { nextData, result: deleted };
+  });
+

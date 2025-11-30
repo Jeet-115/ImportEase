@@ -11,12 +11,14 @@ import {
   FiEdit2,
   FiX,
   FiSave,
+  FiTrash2,
 } from "react-icons/fi";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import * as XLSX from "xlsx-js-style";
 import BackButton from "../components/BackButton";
 import ExcelPreviewModal from "../components/ExcelPreviewModal.jsx";
 import LedgerNameDropdown from "../components/LedgerNameDropdown";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { fetchCompanyMasterById } from "../services/companymasterservices";
 import {
   fetchImportById,
@@ -25,6 +27,7 @@ import {
   updateReverseChargeLedgerNames,
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
+  deleteImport,
 } from "../services/gstr2bservice";
 import {
   createLedgerName as createLedgerNameApi,
@@ -132,6 +135,8 @@ const B2BCompanyHistory = () => {
   const [modalAcceptCreditDrafts, setModalAcceptCreditDrafts] = useState({});
   const [modalActionDrafts, setModalActionDrafts] = useState({});
   const [modalActionReasonDrafts, setModalActionReasonDrafts] = useState({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const buildDownloadFilename = useCallback(
     (type, overrideName) => {
@@ -1074,6 +1079,43 @@ const B2BCompanyHistory = () => {
     }
   };
 
+  const handleDeleteImport = async () => {
+    if (!confirmDeleteId) return;
+    setDeleting(true);
+    try {
+      await deleteImport(confirmDeleteId);
+      setStatus({
+        type: "success",
+        message: "Import and processed file deleted successfully.",
+      });
+      // Remove from cache
+      setImportCache((prev) => {
+        const next = { ...prev };
+        delete next[confirmDeleteId];
+        return next;
+      });
+      setProcessedCache((prev) => {
+        const next = { ...prev };
+        delete next[confirmDeleteId];
+        return next;
+      });
+      // Refresh imports list
+      const { data } = await fetchImportsByCompany(companyId);
+      setImports(data || []);
+      setConfirmDeleteId(null);
+    } catch (error) {
+      console.error("Failed to delete import:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to delete import. Please try again.",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-amber-800">
@@ -1264,6 +1306,14 @@ const B2BCompanyHistory = () => {
                             className="inline-flex items-center gap-1 rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
                           >
                             <FiEye /> View Disallow
+                          </button>
+
+                          {/* 8. Delete */}
+                          <button
+                            onClick={() => setConfirmDeleteId(imp._id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                          >
+                            <FiTrash2 /> Delete
                           </button>
                         </div>
                       </td>
@@ -1585,6 +1635,16 @@ const B2BCompanyHistory = () => {
         columns={preview.columns}
         rows={preview.rows}
         onClose={() => setPreview((prev) => ({ ...prev, open: false }))}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmDeleteId)}
+        title="Delete Import"
+        message="Are you sure you want to delete this import? This will also delete the associated processed file data. This action cannot be undone."
+        confirmText={deleting ? "Deleting..." : "Delete"}
+        cancelText="Cancel"
+        onConfirm={handleDeleteImport}
+        onCancel={() => setConfirmDeleteId(null)}
       />
     </motion.main>
   );

@@ -41,3 +41,6 @@ export const updateMismatchedLedgerNames = (id, payload) =>
 export const updateDisallowLedgerNames = (id, payload) =>
   axiosInstance.put(`/api/gstr2b-imports/${id}/processed/disallow/ledger-names`, payload);
 
+export const deleteImport = (id) =>
+  axiosInstance.delete(`/api/gstr2b-imports/${id}`);
+

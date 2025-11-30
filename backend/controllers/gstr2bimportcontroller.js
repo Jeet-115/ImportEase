@@ -4,6 +4,7 @@ import {
   create as createGstrImport,
   findByCompany as findImportsByCompany,
   findById as findImportById,
+  deleteById as deleteImportById,
 } from "../models/gstr2bimportmodel.js";
 import {
   findById as findProcessedById,
@@ -11,6 +12,7 @@ import {
   updateReverseChargeLedgerNames as updateReverseChargeLedgerNamesById,
   updateMismatchedLedgerNames as updateMismatchedLedgerNamesById,
   updateDisallowLedgerNames as updateDisallowLedgerNamesById,
+  deleteById as deleteProcessedById,
 } from "../models/processedfilemodel.js";
 import { processAndStoreDocument } from "../utils/gstr2bProcessor.js";
 
@@ -580,6 +582,33 @@ export const updateDisallowLedgerNames = async (req, res) => {
     console.error("updateDisallowLedgerNames Error:", error);
     return res.status(500).json({
       message: error.message || "Failed to update disallow ledger names.",
+    });
+  }
+};
+
+export const deleteImport = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Delete both the import and the processed file
+    const deletedImport = await deleteImportById(id);
+    if (!deletedImport) {
+      return res.status(404).json({
+        message: "Import not found.",
+      });
+    }
+
+    // Also delete the processed file if it exists (they share the same _id)
+    await deleteProcessedById(id);
+
+    return res.status(200).json({
+      message: "Import and processed file deleted successfully.",
+      deleted: deletedImport,
+    });
+  } catch (error) {
+    console.error("deleteImport Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to delete import.",
     });
   }
 };
