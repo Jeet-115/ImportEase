@@ -536,7 +536,12 @@ export const buildCombinedWorkbook = ({
   additionalRowStyles.push(null);
 
   categoryTotals.forEach((entry) => {
-    additionalAoA.push([entry.label, ...assignCompactTotals(entry.totals)]);
+    const totalsRow = [entry.label, ...assignCompactTotals(entry.totals)];
+    // Add "rcm paid by party" text after invoice amount for purple total
+    if (entry.label === "Purple Total") {
+      totalsRow.push("rcm paid by party");
+    }
+    additionalAoA.push(totalsRow);
     additionalRowStyles.push(entry.color);
   });
 
@@ -556,6 +561,467 @@ export const buildCombinedWorkbook = ({
   additionalAoA.push(["Action Grand Total", actionGrandTotal || 0]);
   additionalRowStyles.push(COLOR_MAP.actionGrand);
 
+  // Calculate tax totals from rest sheets
+  const calculateRestSheetTaxTotals = (sheetName, rows, headers) => {
+    if (!rows || !rows.length || !headers || !headers.length) {
+      return { igst: 0, cgst: 0, sgst: 0, cess: 0 };
+    }
+
+    // Determine main header pattern based on sheet name
+    // Headers are in format "subheading(heading)" or just "heading"
+    const sheetNameLower = sheetName.toLowerCase();
+    let mainPattern;
+    
+    if (sheetNameLower.includes("isd")) {
+      // ISD, ISDA, ISD(Rejected), ISDA(Rejected) - use "Input tax distribution by ISD"
+      mainPattern = /input.*tax.*distribution.*isd/i;
+    } else if (sheetNameLower.includes("impg")) {
+      // IMPG, IMPGA, IMPGSEZ, IMPGSEZA - use "Amount of tax (₹)"
+      mainPattern = /amount.*tax/i;
+    } else {
+      // Default: ECOA, B2B (ITC Reversal), B2BA (ITC Reversal), B2B(Rejected), B2BA(Rejected), ECO(Rejected), ECOA(Rejected), B2BA
+      // Use "Tax Amount" pattern
+      mainPattern = /tax.*amount/i;
+    }
+
+    // Tax type patterns
+    const igstPattern = /integrated.*tax|igst/i;
+    const cgstPattern = /central.*tax|cgst/i;
+    const sgstPattern = /state.*ut.*tax|sgst|utgst/i;
+    const cessPattern = /cess/i;
+
+    // Find columns matching tax type pattern
+    // Headers are in format "subheading(heading)" where heading contains the main pattern
+    // Try to find exact match first (both patterns), then fallback to tax pattern only
+    const findColumnIndex = (taxPattern) => {
+      // First, try to find exact match (both tax and main pattern)
+      let exactMatch = headers.findIndex((header) => {
+        if (!header) return false;
+        const headerStr = String(header).toLowerCase();
+        return taxPattern.test(headerStr) && mainPattern.test(headerStr);
+      });
+      
+      if (exactMatch !== -1) return exactMatch;
+      
+      // Fallback: find any column matching tax pattern (in case main pattern format differs)
+      return headers.findIndex((header) => {
+        if (!header) return false;
+        const headerStr = String(header).toLowerCase();
+        return taxPattern.test(headerStr);
+      });
+    };
+
+    const igstColIdx = findColumnIndex(igstPattern);
+    const cgstColIdx = findColumnIndex(cgstPattern);
+    const sgstColIdx = findColumnIndex(sgstPattern);
+    const cessColIdx = findColumnIndex(cessPattern);
+
+    // Calculate totals
+    let igstTotal = 0;
+    let cgstTotal = 0;
+    let sgstTotal = 0;
+    let cessTotal = 0;
+
+    rows.forEach((row) => {
+      if (igstColIdx !== -1) {
+        const header = headers[igstColIdx];
+        igstTotal += toNumber(row?.[header]);
+      }
+      if (cgstColIdx !== -1) {
+        const header = headers[cgstColIdx];
+        cgstTotal += toNumber(row?.[header]);
+      }
+      if (sgstColIdx !== -1) {
+        const header = headers[sgstColIdx];
+        sgstTotal += toNumber(row?.[header]);
+      }
+      if (cessColIdx !== -1) {
+        const header = headers[cessColIdx];
+        cessTotal += toNumber(row?.[header]);
+      }
+    });
+
+    return { igst: igstTotal, cgst: cgstTotal, sgst: sgstTotal, cess: cessTotal };
+  };
+
+  // Calculate tax totals for CDNR/DNR sheets based on Note type
+  const calculateCDNRTaxTotals = (sheetName, rows, headers, noteTypeValue) => {
+    if (!rows || !rows.length || !headers || !headers.length) {
+      return { igst: 0, cgst: 0, sgst: 0, cess: 0 };
+    }
+
+    // Find Note type column - check in order: "Note type(Credit note/Debit note details)", "Note type(Debit note details)", "Note type"
+    let noteTypeHeader = null;
+    const noteTypePatterns = [
+      /note.*type.*credit.*note.*debit.*note.*details/i,
+      /note.*type.*debit.*note.*details/i,
+      /^note.*type$/i,
+    ];
+
+    for (const pattern of noteTypePatterns) {
+      const found = headers.find((h) => h && pattern.test(String(h).toLowerCase()));
+      if (found) {
+        noteTypeHeader = found;
+        break;
+      }
+    }
+
+    if (!noteTypeHeader) {
+      return { igst: 0, cgst: 0, sgst: 0, cess: 0 };
+    }
+
+    // Filter rows by Note type value
+    const filteredRows = rows.filter((row) => {
+      const noteType = String(row?.[noteTypeHeader] || "").trim().toUpperCase();
+      return noteType === noteTypeValue.toUpperCase();
+    });
+
+    if (!filteredRows.length) {
+      return { igst: 0, cgst: 0, sgst: 0, cess: 0 };
+    }
+
+    // Use Tax Amount pattern for these sheets
+    const mainPattern = /tax.*amount/i;
+    const igstPattern = /integrated.*tax|igst/i;
+    const cgstPattern = /central.*tax|cgst/i;
+    const sgstPattern = /state.*ut.*tax|sgst|utgst/i;
+    const cessPattern = /cess/i;
+
+    const findColumnIndex = (taxPattern) => {
+      let exactMatch = headers.findIndex((header) => {
+        if (!header) return false;
+        const headerStr = String(header).toLowerCase();
+        return taxPattern.test(headerStr) && mainPattern.test(headerStr);
+      });
+      if (exactMatch !== -1) return exactMatch;
+      return headers.findIndex((header) => {
+        if (!header) return false;
+        const headerStr = String(header).toLowerCase();
+        return taxPattern.test(headerStr);
+      });
+    };
+
+    const igstColIdx = findColumnIndex(igstPattern);
+    const cgstColIdx = findColumnIndex(cgstPattern);
+    const sgstColIdx = findColumnIndex(sgstPattern);
+    const cessColIdx = findColumnIndex(cessPattern);
+
+    let igstTotal = 0;
+    let cgstTotal = 0;
+    let sgstTotal = 0;
+    let cessTotal = 0;
+
+    filteredRows.forEach((row) => {
+      if (igstColIdx !== -1) {
+        const header = headers[igstColIdx];
+        igstTotal += toNumber(row?.[header]);
+      }
+      if (cgstColIdx !== -1) {
+        const header = headers[cgstColIdx];
+        cgstTotal += toNumber(row?.[header]);
+      }
+      if (sgstColIdx !== -1) {
+        const header = headers[sgstColIdx];
+        sgstTotal += toNumber(row?.[header]);
+      }
+      if (cessColIdx !== -1) {
+        const header = headers[cessColIdx];
+        cessTotal += toNumber(row?.[header]);
+      }
+    });
+
+    return { igst: igstTotal, cgst: cgstTotal, sgst: sgstTotal, cess: cessTotal };
+  };
+
+  // Build tax totals table - separate ADD and LESS rows
+  const addRows = [];
+  const lessRows = [];
+  const addRowStyles = [];
+  const lessRowStyles = [];
+
+  // Table headers (will be added later)
+  const tableHeaders = ["ADD/LESS", "Name", "IGST Total", "CGST Total", "SGST Total", "CESS Total", "Final Total"];
+
+  // Row 1: Total Credit B2B (Green rows total) - ADD
+  const greenTaxTotals = {
+    igst: greenTotals.igstTotal || 0,
+    cgst: greenTotals.cgstTotal || 0,
+    sgst: greenTotals.sgstTotal || 0,
+    cess: greenTotals.cessTotal || 0,
+  };
+  const greenFinalTotal = greenTaxTotals.igst + greenTaxTotals.cgst + greenTaxTotals.sgst + greenTaxTotals.cess;
+  addRows.push([
+    "ADD",
+    "Total Credit B2B",
+    greenTaxTotals.igst,
+    greenTaxTotals.cgst,
+    greenTaxTotals.sgst,
+    greenTaxTotals.cess,
+    greenFinalTotal,
+  ]);
+  addRowStyles.push(COLOR_MAP.green);
+
+  // Row 2: AMEDMEND BILL (B2BA sheet) - ADD
+  const b2baSheet = restSheets.find((s) => s.sheetName?.toLowerCase() === "b2ba");
+  const b2baTotals = b2baSheet
+    ? calculateRestSheetTaxTotals(b2baSheet.sheetName, b2baSheet.rows, b2baSheet.headers)
+    : { igst: 0, cgst: 0, sgst: 0, cess: 0 };
+  const b2baFinalTotal = b2baTotals.igst + b2baTotals.cgst + b2baTotals.sgst + b2baTotals.cess;
+  addRows.push([
+    "ADD",
+    "AMEDMEND BILL(B2BA)",
+    b2baTotals.igst,
+    b2baTotals.cgst,
+    b2baTotals.sgst,
+    b2baTotals.cess,
+    b2baFinalTotal,
+  ]);
+  addRowStyles.push(null);
+
+  // Sheets with "Tax Amount" pattern: ECOA, B2B (ITC Reversal), B2BA (ITC Reversal), B2B(Rejected), B2BA(Rejected), ECO(Rejected), ECOA(Rejected) - ADD
+  const taxAmountSheets = ["ECO", "ECOA", "B2B (ITC Reversal)", "B2BA (ITC Reversal)", "B2B(Rejected)", "B2BA(Rejected)", "ECO(Rejected)", "ECOA(Rejected)"];
+  taxAmountSheets.forEach((sheetName) => {
+    const sheet = restSheets.find((s) => s.sheetName === sheetName);
+    if (sheet) {
+      const totals = calculateRestSheetTaxTotals(sheet.sheetName, sheet.rows, sheet.headers);
+      const finalTotal = totals.igst + totals.cgst + totals.sgst + totals.cess;
+      addRows.push([
+        "ADD",
+        sheetName,
+        totals.igst,
+        totals.cgst,
+        totals.sgst,
+        totals.cess,
+        finalTotal,
+      ]);
+      addRowStyles.push(null);
+    }
+  });
+
+  // Sheets with "Input tax distribution by ISD" pattern: ISD, ISDA, ISD(Rejected), ISDA(Rejected) - ADD
+  const isdSheets = ["ISD", "ISDA", "ISD(Rejected)", "ISDA(Rejected)"];
+  isdSheets.forEach((sheetName) => {
+    const sheet = restSheets.find((s) => s.sheetName === sheetName);
+    if (sheet) {
+      const totals = calculateRestSheetTaxTotals(sheet.sheetName, sheet.rows, sheet.headers);
+      const finalTotal = totals.igst + totals.cgst + totals.sgst + totals.cess;
+      addRows.push([
+        "ADD",
+        sheetName,
+        totals.igst,
+        totals.cgst,
+        totals.sgst,
+        totals.cess,
+        finalTotal,
+      ]);
+      addRowStyles.push(null);
+    }
+  });
+
+  // Sheets with "Amount of tax (₹)" pattern: IMPG, IMPGA, IMPGSEZ, IMPGSEZA - ADD
+  const impgSheets = ["IMPG", "IMPGA", "IMPGSEZ", "IMPGSEZA"];
+  impgSheets.forEach((sheetName) => {
+    const sheet = restSheets.find((s) => s.sheetName === sheetName);
+    if (sheet) {
+      const totals = calculateRestSheetTaxTotals(sheet.sheetName, sheet.rows, sheet.headers);
+      const finalTotal = totals.igst + totals.cgst + totals.sgst + totals.cess;
+      addRows.push([
+        "ADD",
+        sheetName,
+        totals.igst,
+        totals.cgst,
+        totals.sgst,
+        totals.cess,
+        finalTotal,
+      ]);
+      addRowStyles.push(null);
+    }
+  });
+
+  // CDNR/DNR sheets: B2B-CDNR, B2B-CDNRA, B2B-DNR, B2B-DNRA, B2B-CDNR(Rejected), B2B-CDNRA(Rejected)
+  const cdnrSheets = ["B2B-CDNR", "B2B-CDNRA", "B2B-DNR", "B2B-DNRA", "B2B-CDNR(Rejected)", "B2B-CDNRA(Rejected)"];
+  cdnrSheets.forEach((sheetName) => {
+    const sheet = restSheets.find((s) => s.sheetName === sheetName);
+    if (sheet) {
+      // Calculate for Debit Note rows (ADD)
+      const debitNoteTotals = calculateCDNRTaxTotals(sheet.sheetName, sheet.rows, sheet.headers, "Debit Note");
+      const debitNoteFinalTotal = debitNoteTotals.igst + debitNoteTotals.cgst + debitNoteTotals.sgst + debitNoteTotals.cess;
+      if (debitNoteFinalTotal > 0) {
+        addRows.push([
+          "ADD",
+          `DEBIT NOTE ${sheetName}`,
+          debitNoteTotals.igst,
+          debitNoteTotals.cgst,
+          debitNoteTotals.sgst,
+          debitNoteTotals.cess,
+          debitNoteFinalTotal,
+        ]);
+        addRowStyles.push(null);
+      }
+
+      // Calculate for Credit Note rows (LESS)
+      const creditNoteTotals = calculateCDNRTaxTotals(sheet.sheetName, sheet.rows, sheet.headers, "Credit Note");
+      const creditNoteFinalTotal = creditNoteTotals.igst + creditNoteTotals.cgst + creditNoteTotals.sgst + creditNoteTotals.cess;
+      if (creditNoteFinalTotal > 0) {
+        lessRows.push([
+          "LESS",
+          `CREDIT NOTE ${sheetName}`,
+          creditNoteTotals.igst,
+          creditNoteTotals.cgst,
+          creditNoteTotals.sgst,
+          creditNoteTotals.cess,
+          creditNoteFinalTotal,
+        ]);
+        lessRowStyles.push(null);
+      }
+    }
+  });
+
+  // DISALLOW row (LESS) - red rows + orange rows totals
+  const disallowTotals = {
+    igst: (redTotals.igstTotal || 0) + (orangeTotals.igstTotal || 0),
+    cgst: (redTotals.cgstTotal || 0) + (orangeTotals.cgstTotal || 0),
+    sgst: (redTotals.sgstTotal || 0) + (orangeTotals.sgstTotal || 0),
+    cess: (redTotals.cessTotal || 0) + (orangeTotals.cessTotal || 0),
+  };
+  const disallowFinalTotal = disallowTotals.igst + disallowTotals.cgst + disallowTotals.sgst + disallowTotals.cess;
+  lessRows.push([
+    "LESS",
+    "DISALLOW",
+    disallowTotals.igst,
+    disallowTotals.cgst,
+    disallowTotals.sgst,
+    disallowTotals.cess,
+    disallowFinalTotal,
+  ]);
+  lessRowStyles.push(null);
+
+  // Calculate totals for ADD rows
+  const addTotals = addRows.reduce(
+    (acc, row) => ({
+      igst: acc.igst + (row[2] || 0),
+      cgst: acc.cgst + (row[3] || 0),
+      sgst: acc.sgst + (row[4] || 0),
+      cess: acc.cess + (row[5] || 0),
+    }),
+    { igst: 0, cgst: 0, sgst: 0, cess: 0 }
+  );
+  const addFinalTotal = addTotals.igst + addTotals.cgst + addTotals.sgst + addTotals.cess;
+
+  // Calculate totals for LESS rows
+  const lessTotals = lessRows.reduce(
+    (acc, row) => ({
+      igst: acc.igst + (row[2] || 0),
+      cgst: acc.cgst + (row[3] || 0),
+      sgst: acc.sgst + (row[4] || 0),
+      cess: acc.cess + (row[5] || 0),
+    }),
+    { igst: 0, cgst: 0, sgst: 0, cess: 0 }
+  );
+  const lessFinalTotal = lessTotals.igst + lessTotals.cgst + lessTotals.sgst + lessTotals.cess;
+
+  // Build final table: headers, ADD rows, ADD totals, LESS rows, LESS totals
+  const taxTotalsAoA = [];
+  const taxTotalsStyles = [];
+
+  taxTotalsAoA.push(tableHeaders);
+  taxTotalsStyles.push(null);
+
+  // ADD rows
+  addRows.forEach((row) => {
+    taxTotalsAoA.push(row);
+  });
+  addRowStyles.forEach((style) => {
+    taxTotalsStyles.push(style);
+  });
+
+  // ADD totals row
+  if (addRows.length > 0) {
+    taxTotalsAoA.push([
+      "ADD Total",
+      "",
+      addTotals.igst,
+      addTotals.cgst,
+      addTotals.sgst,
+      addTotals.cess,
+      addFinalTotal,
+    ]);
+    taxTotalsStyles.push(COLOR_MAP.grand);
+  }
+
+  // Empty row separator
+  if (addRows.length > 0 && lessRows.length > 0) {
+    taxTotalsAoA.push([]);
+    taxTotalsStyles.push(null);
+  }
+
+  // LESS rows
+  lessRows.forEach((row) => {
+    taxTotalsAoA.push(row);
+  });
+  lessRowStyles.forEach((style) => {
+    taxTotalsStyles.push(style);
+  });
+
+  // LESS totals row
+  if (lessRows.length > 0) {
+    taxTotalsAoA.push([
+      "LESS Total",
+      "",
+      lessTotals.igst,
+      lessTotals.cgst,
+      lessTotals.sgst,
+      lessTotals.cess,
+      lessFinalTotal,
+    ]);
+    taxTotalsStyles.push(COLOR_MAP.grand);
+  }
+
+  // GRAND TOTAL row (ADD Total - LESS Total)
+  const grandTaxTotal = {
+    igst: addTotals.igst - lessTotals.igst,
+    cgst: addTotals.cgst - lessTotals.cgst,
+    sgst: addTotals.sgst - lessTotals.sgst,
+    cess: addTotals.cess - lessTotals.cess,
+  };
+  const grandTaxFinalTotal = grandTaxTotal.igst + grandTaxTotal.cgst + grandTaxTotal.sgst + grandTaxTotal.cess;
+  taxTotalsAoA.push([
+    "GRAND TOTAL",
+    "",
+    grandTaxTotal.igst,
+    grandTaxTotal.cgst,
+    grandTaxTotal.sgst,
+    grandTaxTotal.cess,
+    grandTaxFinalTotal,
+  ]);
+  taxTotalsStyles.push(COLOR_MAP.grand);
+
+  // RCM PAY AMOUNT row
+  const rcmPayAmount = purpleTotals.supplierAmountTotal || 0;
+  const rcmPayTotals = {
+    igst: purpleTotals.igstTotal || 0,
+    cgst: purpleTotals.cgstTotal || 0,
+    sgst: purpleTotals.sgstTotal || 0,
+    cess: purpleTotals.cessTotal || 0,
+  };
+  const rcmPayFinalTotal = rcmPayTotals.igst + rcmPayTotals.cgst + rcmPayTotals.sgst + rcmPayTotals.cess;
+  taxTotalsAoA.push([
+    rcmPayAmount,
+    "RCM PAY AMOUNT",
+    rcmPayTotals.igst,
+    rcmPayTotals.cgst,
+    rcmPayTotals.sgst,
+    rcmPayTotals.cess,
+    rcmPayFinalTotal,
+  ]);
+  taxTotalsStyles.push(COLOR_MAP.purple);
+
+  // Add tax totals table after action totals
+  additionalAoA.push([]);
+  additionalRowStyles.push(null);
+  additionalAoA.push([]);
+  additionalRowStyles.push(null);
+
   if (additionalAoA.length) {
     const originRow = masterRows.length + 1;
     XLSX.utils.sheet_add_aoa(masterSheet, additionalAoA, {
@@ -564,6 +1030,18 @@ export const buildCombinedWorkbook = ({
     additionalRowStyles.forEach((color, idx) => {
       if (!color) return;
       applyRowStyle(masterSheet, masterHeaders, masterRows.length + idx, color);
+    });
+  }
+
+  // Add tax totals table
+  if (taxTotalsAoA.length) {
+    const taxTotalsStartRow = masterRows.length + additionalAoA.length + 1;
+    XLSX.utils.sheet_add_aoa(masterSheet, taxTotalsAoA, {
+      origin: { r: taxTotalsStartRow, c: 0 },
+    });
+    taxTotalsStyles.forEach((color, idx) => {
+      if (!color) return;
+      applyRowStyle(masterSheet, masterHeaders, taxTotalsStartRow + idx, color);
     });
   }
   XLSX.utils.book_append_sheet(workbook, masterSheet, "Master");
