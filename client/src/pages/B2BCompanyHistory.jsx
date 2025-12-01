@@ -366,23 +366,52 @@ const B2BCompanyHistory = () => {
     },
   ];
   const ledgerModalColumns = useMemo(() => {
+    const columnsToMove = [
+      'gstRegistrationType',
+      'state',
+      'supplierState',
+      'GSTR-1/1A/IFF/GSTR-5 Filing Date',
+      'GSTR-2B Taxable Value'
+    ];
+    
+    // Get base columns from the first row
     const base = ledgerModalRows[0]
       ? extractVisibleColumns(ledgerModalRows[0])
       : [];
-    const columns = [...base];
+    
+    // Create a set of columns to move for faster lookup
+    const columnsToMoveSet = new Set(columnsToMove);
+    
+    // Filter out the columns we want to move from their original positions
+    const filteredColumns = base.filter(col => !columnsToMoveSet.has(col));
+    
+    // Find the index where we want to insert the columns (after the 4 editing columns)
+    const ledgerNameIndex = filteredColumns.indexOf('Ledger Name');
+    const insertIndex = ledgerNameIndex !== -1 ? ledgerNameIndex + 4 : 4;
+    
+    // Insert the columns at the desired position
+    filteredColumns.splice(insertIndex, 0, ...columnsToMove);
+    
+    // Ensure Action, Action Reason, and Accept Credit are present
+    const result = [...filteredColumns];
+    
+    // Add Accept Credit for mismatched tab if not already present
     if (
       ledgerModal.activeTab === "mismatched" &&
-      !columns.includes("Accept Credit")
+      !result.includes("Accept Credit")
     ) {
-      columns.push("Accept Credit");
+      result.push("Accept Credit");
     }
-    if (!columns.includes("Action")) {
-      columns.push("Action");
+    
+    // Add Action and Action Reason if not already present
+    if (!result.includes("Action")) {
+      result.push("Action");
     }
-    if (!columns.includes("Action Reason")) {
-      columns.push("Action Reason");
+    if (!result.includes("Action Reason")) {
+      result.push("Action Reason");
     }
-    return columns;
+    
+    return result;
   }, [ledgerModalRows, ledgerModal.activeTab]);
   
   const {
@@ -1336,8 +1365,8 @@ const B2BCompanyHistory = () => {
       </section>
 
       {ledgerModal.open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-6xl rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-[98vw] max-w-[98vw] rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">
             <header className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-2xl font-semibold text-slate-900">
@@ -1422,144 +1451,217 @@ const B2BCompanyHistory = () => {
                 )}
               </button>
             </div>
-            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh]">
+            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh] shadow-inner">
               {hasLedgerModalRows ? (
-                <table className="min-w-full text-xs text-slate-700">
+                <table className="w-full text-xs text-slate-700">
                   <thead className="sticky top-0 bg-white">
                     <tr>
-                      {ledgerModalColumns.map((column) => (
-                        <th
-                          key={column}
-                          className="px-2 py-2 text-left font-semibold border-b border-amber-100"
+                      {ledgerModalColumns.map((column) => {
+                        // Skip the columns we're moving next to Ledger Name
+                        if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                          return null;
+                        }
+                        return (
+                          <th
+                            key={column}
+                            className={`px-1 py-1.5 text-left text-xs font-medium border-b border-amber-100 ${
+                              column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
+                            }`}
+                          >
+                            {column}
+                          </th>
+                        );
+                      })}
+                      {/* Add grouped header for the ledger editing fields */}
+                      {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason'].includes(col)) && (
+                        <th 
+                          colSpan={3}
+                          className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                         >
-                          {column}
+                          Ledger Actions
                         </th>
-                      ))}
+                      )}
+                    </tr>
+                    <tr className="bg-amber-50">
+                      {ledgerModalColumns.map((column) => {
+                        // Skip the columns we're moving next to Ledger Name in the main header
+                        if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                          return null;
+                        }
+                        return <th key={`sub-${column}`} className="invisible"></th>;
+                      })}
+                      {/* Add sub-headers for the grouped fields */}
+                      {ledgerModalColumns.includes('Accept Credit') && (
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                          Accept Credit
+                        </th>
+                      )}
+                      {ledgerModalColumns.includes('Action') && (
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                          Action
+                        </th>
+                      )}
+                      {ledgerModalColumns.includes('Action Reason') && (
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                          Reason
+                        </th>
+                      )}
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-amber-50">
                     {ledgerModalRows.map((row, rowIdx) => {
                       const rowKey = getProcessedRowKey(row, rowIdx);
                       const ledgerValue = modalLedgerInputs[rowKey] ?? "";
                       return (
                         <tr
                           key={rowKey}
-                          className="border-b border-amber-50 last:border-0"
+                          className="hover:bg-amber-50/30 transition-colors"
                         >
                           {ledgerModalColumns.map((column) => {
                             const cellKey = `${rowKey}-${column}`;
+                            // Skip the columns we're moving next to Ledger Name in the main cells
+                            if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                              return null;
+                            }
                             return (
-                              <td key={cellKey} className="px-2 py-3 align-middle">
+                              <td 
+                                key={cellKey} 
+                                className={`px-1 py-1 align-middle ${
+                                  column === 'Ledger Name' ? 'pr-1 border-r-2 border-amber-200' : ''
+                                }`}
+                              >
                                 {column === "Ledger Name" ? (
-                                  <LedgerNameDropdown
-                                    value={ledgerValue}
-                                    options={ledgerNames}
-                                    onChange={(newValue) =>
-                                      modalHandleLedgerInputChange(rowKey, newValue)
-                                    }
-                                    onAddNew={async (newName) => {
-                                      try {
-                                        await createLedgerNameApi({ name: newName });
-                                        await loadLedgerNames();
-                                        modalHandleLedgerInputChange(rowKey, newName);
-                                        setStatus({
-                                          type: "success",
-                                          message: "Ledger name added.",
-                                        });
-                                      } catch (error) {
-                                        console.error("Failed to add ledger name:", error);
-                                        setStatus({
-                                          type: "error",
-                                          message:
-                                            error?.response?.data?.message ||
-                                            "Unable to add ledger name.",
-                                        });
-                                      }
-                                    }}
-                                  />
-                                ) : isMismatchedModal &&
-                                  column === "Accept Credit" ? (
-                                  <select
-                                    value={
-                                      (() => {
-                                        const hasDraft = Object.prototype.hasOwnProperty.call(
-                                          modalAcceptCreditDrafts,
-                                          rowKey
-                                        );
-                                        const draftValue = hasDraft ? modalAcceptCreditDrafts[rowKey] : undefined;
-                                        const sourceValue =
-                                          draftValue !== undefined ? draftValue : row?.["Accept Credit"] ?? "";
-                                        return normalizeAcceptCreditValue(sourceValue) ?? "";
-                                      })()
-                                    }
-                                    onChange={(event) =>
-                                      handleLedgerModalAcceptCreditChange(
-                                        rowKey,
-                                        event.target.value
-                                      )
-                                    }
-                                    className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                  >
-                                    <option value="">Select</option>
-                                    <option value="Yes">Yes</option>
-                                    <option value="No">No</option>
-                                  </select>
-                                ) : column === "Accept Credit" ? (
-                                  renderModalAcceptCreditBadge(
-                                    Object.prototype.hasOwnProperty.call(
-                                      modalAcceptCreditDrafts,
-                                      rowKey
-                                    )
-                                      ? modalAcceptCreditDrafts[rowKey]
-                                      : row?.[column]
-                                  )
-                                ) : column === "Action" ? (
-                                  <select
-                                    value={getModalActionValueForRow(row, rowKey) ?? ""}
-                                    onChange={(event) =>
-                                      handleLedgerModalActionChange(
-                                        rowKey,
-                                        event.target.value
-                                      )
-                                    }
-                                    className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                  >
-                                    <option value="">Select</option>
-                                    {ACTION_OPTIONS.map((option) => (
-                                      <option key={option} value={option}>
-                                        {option}
-                                      </option>
-                                    ))}
-                                  </select>
-                                ) : column === "Action Reason" ? (
-                                  (() => {
-                                    const actionValue = getModalActionValueForRow(row, rowKey);
-                                    const shouldShow = actionValue === "Reject" || actionValue === "Pending";
-                                    if (!shouldShow) {
-                                      return <span className="text-slate-400">—</span>;
-                                    }
-                                    const hasDraft = Object.prototype.hasOwnProperty.call(
-                                      modalActionReasonDrafts,
-                                      rowKey
-                                    );
-                                    const draftValue = hasDraft ? modalActionReasonDrafts[rowKey] : undefined;
-                                    const currentValue =
-                                      draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
-                                    return (
-                                      <input
-                                        type="text"
-                                        value={currentValue}
-                                        onChange={(event) =>
-                                          handleLedgerModalActionReasonChange(
-                                            rowKey,
-                                            event.target.value
-                                          )
+                                  <div className="flex items-center gap-1">
+                                    <div className="flex-1">
+                                      <LedgerNameDropdown
+                                        value={ledgerValue}
+                                        options={ledgerNames}
+                                        onChange={(newValue) =>
+                                          modalHandleLedgerInputChange(rowKey, newValue)
                                         }
-                                        placeholder="Enter reason..."
-                                        className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        onAddNew={async (newName) => {
+                                          try {
+                                            await createLedgerNameApi({ name: newName });
+                                            await loadLedgerNames();
+                                            modalHandleLedgerInputChange(rowKey, newName);
+                                            setStatus({
+                                              type: "success",
+                                              message: "Ledger name added.",
+                                            });
+                                          } catch (error) {
+                                            console.error("Failed to add ledger name:", error);
+                                            setStatus({
+                                              type: "error",
+                                              message:
+                                                error?.response?.data?.message ||
+                                                "Unable to add ledger name.",
+                                            });
+                                          }
+                                        }}
                                       />
-                                    );
-                                  })()
+                                    </div>
+                                    
+                                    {/* Accept Credit Field */}
+                                    {ledgerModalColumns.includes('Accept Credit') && (
+                                      <div className="w-20">
+                                        {isMismatchedModal ? (
+                                          <select
+                                            value={
+                                              (() => {
+                                                const hasDraft = Object.prototype.hasOwnProperty.call(
+                                                  modalAcceptCreditDrafts,
+                                                  rowKey
+                                                );
+                                                const draftValue = hasDraft ? modalAcceptCreditDrafts[rowKey] : undefined;
+                                                const sourceValue =
+                                                  draftValue !== undefined ? draftValue : row?.["Accept Credit"] ?? "";
+                                                return normalizeAcceptCreditValue(sourceValue) ?? "";
+                                              })()
+                                            }
+                                            onChange={(event) =>
+                                              handleLedgerModalAcceptCreditChange(
+                                                rowKey,
+                                                event.target.value
+                                              )
+                                            }
+                                            className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                          >
+                                            <option value="">Credit?</option>
+                                            <option value="Yes">Yes</option>
+                                            <option value="No">No</option>
+                                          </select>
+                                        ) : (
+                                          <div className="px-1 py-0.5 text-xs">
+                                            {renderModalAcceptCreditBadge(
+                                              Object.prototype.hasOwnProperty.call(
+                                                modalAcceptCreditDrafts,
+                                                rowKey
+                                              )
+                                                ? modalAcceptCreditDrafts[rowKey]
+                                                : row?.["Accept Credit"]
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Action Field */}
+                                    {ledgerModalColumns.includes('Action') && (
+                                      <div className="w-20">
+                                        <select
+                                          value={getModalActionValueForRow(row, rowKey) ?? ""}
+                                          onChange={(event) =>
+                                            handleLedgerModalActionChange(
+                                              rowKey,
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        >
+                                          <option value="">Action</option>
+                                          {ACTION_OPTIONS.map((option) => (
+                                            <option key={option} value={option}>
+                                              {option}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Action Reason Field */}
+                                    {ledgerModalColumns.includes('Action Reason') && (
+                                      <div className="w-28">
+                                        {(() => {
+                                          const actionValue = getModalActionValueForRow(row, rowKey);
+                                          const shouldShow = actionValue === "Reject" || actionValue === "Pending";
+                                          if (!shouldShow) {
+                                            return <div className="h-8"></div>; // Maintain consistent height
+                                          }
+                                          const hasDraft = Object.prototype.hasOwnProperty.call(
+                                            modalActionReasonDrafts,
+                                            rowKey
+                                          );
+                                          const draftValue = hasDraft ? modalActionReasonDrafts[rowKey] : undefined;
+                                          const currentValue =
+                                            draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
+                                          return (
+                                            <input
+                                              type="text"
+                                              value={currentValue}
+                                              onChange={(event) =>
+                                                handleLedgerModalActionReasonChange(
+                                                  rowKey,
+                                                  event.target.value
+                                                )
+                                              }
+                                              placeholder="Reason..."
+                                              className="w-full rounded border border-amber-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                            />
+                                          );
+                                        })()}
+                                      </div>
+                                    )}
+                                  </div>
                                 ) : (
                                   <span>{toDisplayValue(row?.[column])}</span>
                                 )}

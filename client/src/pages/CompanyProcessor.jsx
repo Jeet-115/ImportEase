@@ -757,14 +757,44 @@ const CompanyProcessor = () => {
     ]
   );
 
-  const appendActionColumn = useCallback((columns = []) => {
-    let result = [...columns];
+  const appendActionColumn = useCallback((columns = [], tabKey) => {
+    const columnsToMove = [
+      'gstRegistrationType',
+      'state',
+      'supplierState',
+      'GSTR-1/1A/IFF/GSTR-5 Filing Date',
+      'GSTR-2B Taxable Value'
+    ];
+    
+    // Create a set of columns to move for faster lookup
+    const columnsToMoveSet = new Set(columnsToMove);
+    
+    // Filter out the columns we want to move from their original positions
+    const filteredColumns = columns.filter(col => !columnsToMoveSet.has(col));
+    
+    // Find the index where we want to insert the columns (after the 4 editing columns)
+    const ledgerNameIndex = filteredColumns.indexOf('Ledger Name');
+    const insertIndex = ledgerNameIndex !== -1 ? ledgerNameIndex + 4 : 4;
+    
+    // Insert the columns at the desired position
+    filteredColumns.splice(insertIndex, 0, ...columnsToMove);
+    
+    // Start with the filtered columns
+    const result = [...filteredColumns];
+    
+    // Only add Accept Credit for mismatched tab
+    if (tabKey === 'mismatched' && !result.includes("Accept Credit")) {
+      result.push("Accept Credit");
+    }
+    
+    // Always ensure Action and Action Reason are present
     if (!result.includes("Action")) {
       result.push("Action");
     }
     if (!result.includes("Action Reason")) {
       result.push("Action Reason");
     }
+    
     return result;
   }, []);
 
@@ -773,7 +803,7 @@ const CompanyProcessor = () => {
       key: "processed",
       label: "Processed Rows",
       rows: processedRows,
-      columns: appendActionColumn(processedColumns),
+      columns: appendActionColumn(processedColumns, 'processed'),
       ledgerInputs: processedLedgerInputs,
       handleChange: handleProcessedLedgerInputChange,
       dirtyCount: processedLedgerDirtyCount,
@@ -787,7 +817,7 @@ const CompanyProcessor = () => {
       key: "reverseCharge",
       label: "Reverse Charge Rows",
       rows: reverseChargeRows,
-      columns: appendActionColumn(reverseChargeColumns),
+      columns: appendActionColumn(reverseChargeColumns, 'reverseCharge'),
       ledgerInputs: reverseChargeLedgerInputs,
       handleChange: handleReverseChargeLedgerInputChange,
       dirtyCount: reverseChargeLedgerDirtyCount,
@@ -801,7 +831,7 @@ const CompanyProcessor = () => {
       key: "mismatched",
       label: "Mismatched Rows",
       rows: mismatchedRows,
-      columns: appendActionColumn(mismatchedColumnsWithAccept),
+      columns: appendActionColumn(mismatchedColumnsWithAccept, 'mismatched'),
       ledgerInputs: mismatchedLedgerInputs,
       handleChange: handleMismatchedLedgerInputChange,
       dirtyCount: mismatchedLedgerDirtyCount,
@@ -815,7 +845,7 @@ const CompanyProcessor = () => {
       key: "disallow",
       label: "Disallow Rows",
       rows: disallowRows,
-      columns: appendActionColumn(disallowColumns),
+      columns: appendActionColumn(disallowColumns, 'disallow'),
       ledgerInputs: disallowLedgerInputs,
       handleChange: handleDisallowLedgerInputChange,
       dirtyCount: disallowLedgerDirtyCount,
@@ -1794,7 +1824,7 @@ const CompanyProcessor = () => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
-      <section className="mx-auto max-w-6xl space-y-6">
+      <section className="w-full px-6 space-y-6">
         <BackButton label="Back to selector" fallback="/company-selector" />
 
         <motion.header
@@ -2109,153 +2139,231 @@ const CompanyProcessor = () => {
                 No saved ledger names yet. Add one to reuse it in every row.
               </p>
             ) : null}
-            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh]">
+            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh] shadow-inner">
               <table className="min-w-full text-xs text-slate-700">
                 <thead className="sticky top-0 bg-white">
                   <tr>
-                    {activeColumns.map((column) => (
-                      <th
-                        key={column}
-                        className="px-2 py-2 text-left font-semibold border-b border-amber-100"
+                    {activeColumns.map((column) => {
+                      // Skip the columns we're moving next to Ledger Name
+                      if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                        return null;
+                      }
+                      return (
+                        <th
+                          key={column}
+                          className={`px-2 py-2 text-left font-semibold border-b border-amber-100 ${
+                            column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
+                          }`}
+                        >
+                          {column}
+                        </th>
+                      );
+                    })}
+                    {/* Add grouped header for the ledger editing fields */}
+                    {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason'].includes(col)) && (
+                      <th 
+                        colSpan={3}
+                        className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                       >
-                        {column}
+                        Ledger Actions
                       </th>
-                    ))}
+                    )}
+                  </tr>
+                  <tr className="bg-amber-50">
+                    {activeColumns.map((column) => {
+                      // Skip the columns we're moving next to Ledger Name in the main header
+                      if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                        return null;
+                      }
+                      return <th key={`sub-${column}`} className="invisible"></th>;
+                    })}
+                    {/* Add sub-headers for the grouped fields */}
+                    {activeColumns.includes('Accept Credit') && (
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                        Accept Credit
+                      </th>
+                    )}
+                    {activeColumns.includes('Action') && (
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                        Action
+                      </th>
+                    )}
+                    {activeColumns.includes('Action Reason') && (
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                        Reason
+                      </th>
+                    )}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-amber-50">
                   {activeRows.map((row, rowIdx) => {
                     const rowKey = getRowKey(row, rowIdx);
                     const ledgerValue = activeLedgerInputs[rowKey] ?? "";
                     const handleChange = activeHandleChange;
                     const columns = activeColumns;
+                    
                     return (
                       <tr
                         key={rowKey}
-                        className="border-b border-amber-50 last:border-0"
+                        className="hover:bg-amber-50/30 transition-colors"
                       >
                         {columns.map((column) => {
                           const cellKey = `${rowKey}-${column}`;
+                          
+                          // Skip the columns we're moving next to Ledger Name in the main cells
+                          if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                            return null;
+                          }
+                          
                           return (
                             <td
                               key={cellKey}
-                              className="px-2 py-2 align-top text-[11px]"
+                              className={`px-2 py-2 align-top text-[11px] ${
+                                column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
+                              }`}
                             >
                               {column === "Ledger Name" ? (
-                                <LedgerNameDropdown
-                                  value={ledgerValue}
-                                  options={ledgerNames}
-                                  onChange={(newValue) =>
-                                    handleChange(rowKey, newValue)
-                                  }
-                                  onAddNew={async (newName) => {
-                                    try {
-                                      await createLedgerNameApi({ name: newName });
-                                      await loadLedgerNames();
-                                      handleChange(rowKey, newName);
-                                      setStatus({
-                                        type: "success",
-                                        message: "Ledger name added.",
-                                      });
-                                    } catch (error) {
-                                      console.error("Failed to add ledger name:", error);
-                                      setStatus({
-                                        type: "error",
-                                        message:
-                                          error?.response?.data?.message ||
-                                          "Unable to add ledger name.",
-                                      });
-                                    }
-                                  }}
-                                />
-                              ) : isMismatchedTab &&
-                                column === "Accept Credit" ? (
-                                <select
-                                  value={
-                                    Object.prototype.hasOwnProperty.call(
-                                      acceptCreditDrafts,
-                                      rowKey
-                                    )
-                                      ? acceptCreditDrafts[rowKey] ?? ""
-                                      : row?.["Accept Credit"] ?? ""
-                                  }
-                                  onChange={(event) =>
-                                    handleAcceptCreditChange(
-                                      rowKey,
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                >
-                                  <option value="">Select</option>
-                                  <option value="Yes">Yes</option>
-                                  <option value="No">No</option>
-                                </select>
-                              ) : column === "Accept Credit" ? (
-                                renderAcceptCreditBadge(
-                                  Object.prototype.hasOwnProperty.call(
-                                    acceptCreditDrafts,
-                                    rowKey
-                                  )
-                                    ? acceptCreditDrafts[rowKey]
-                                    : row?.[column]
-                                )
-                              ) : column === "Action" ? (
-                                <select
-                                  value={
-                                    Object.prototype.hasOwnProperty.call(
-                                      actionDrafts,
-                                      rowKey
-                                    )
-                                      ? actionDrafts[rowKey] ?? ""
-                                      : row?.Action ?? ""
-                                  }
-                                  onChange={(event) =>
-                                    handleActionChange(
-                                      activeConfig.key,
-                                      rowKey,
-                                      event.target.value
-                                    )
-                                  }
-                                  className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                >
-                                  <option value="">Select</option>
-                                  {ACTION_OPTIONS.map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : column === "Action Reason" ? (
-                                (() => {
-                                  const actionValue = getActionValueForRow(row, rowKey);
-                                  const shouldShow = actionValue === "Reject" || actionValue === "Pending";
-                                  if (!shouldShow) {
-                                    return <span className="text-slate-400">—</span>;
-                                  }
-                                  const hasDraft = Object.prototype.hasOwnProperty.call(
-                                    actionReasonDrafts,
-                                    rowKey
-                                  );
-                                  const draftValue = hasDraft ? actionReasonDrafts[rowKey] : undefined;
-                                  const currentValue =
-                                    draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
-                                  return (
-                                    <input
-                                      type="text"
-                                      value={currentValue}
-                                      onChange={(event) =>
-                                        handleActionReasonChange(
-                                          activeConfig.key,
-                                          rowKey,
-                                          event.target.value
-                                        )
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1">
+                                    <LedgerNameDropdown
+                                      value={ledgerValue}
+                                      options={ledgerNames}
+                                      onChange={(newValue) =>
+                                        handleChange(rowKey, newValue)
                                       }
-                                      placeholder="Enter reason..."
-                                      className="w-full rounded-xl border border-amber-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                      onAddNew={async (newName) => {
+                                        try {
+                                          await createLedgerNameApi({ name: newName });
+                                          await loadLedgerNames();
+                                          handleChange(rowKey, newName);
+                                          setStatus({
+                                            type: "success",
+                                            message: "Ledger name added.",
+                                          });
+                                        } catch (error) {
+                                          console.error("Failed to add ledger name:", error);
+                                          setStatus({
+                                            type: "error",
+                                            message:
+                                              error?.response?.data?.message ||
+                                              "Unable to add ledger name.",
+                                          });
+                                        }
+                                      }}
                                     />
-                                  );
-                                })()
+                                  </div>
+                                  
+                                  {/* Accept Credit Field */}
+                                  {activeColumns.includes('Accept Credit') && (
+                                    <div className="w-28">
+                                      {isMismatchedTab ? (
+                                        <select
+                                          value={
+                                            Object.prototype.hasOwnProperty.call(
+                                              acceptCreditDrafts,
+                                              rowKey
+                                            )
+                                              ? acceptCreditDrafts[rowKey] ?? ""
+                                              : row?.["Accept Credit"] ?? ""
+                                          }
+                                          onChange={(event) =>
+                                            handleAcceptCreditChange(
+                                              rowKey,
+                                              event.target.value
+                                            )
+                                          }
+                                          className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        >
+                                          <option value="">Credit?</option>
+                                          <option value="Yes">Yes</option>
+                                          <option value="No">No</option>
+                                        </select>
+                                      ) : (
+                                        <div className="px-2 py-1 text-[11px]">
+                                          {renderAcceptCreditBadge(
+                                            Object.prototype.hasOwnProperty.call(
+                                              acceptCreditDrafts,
+                                              rowKey
+                                            )
+                                              ? acceptCreditDrafts[rowKey]
+                                              : row?.["Accept Credit"]
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Action Field */}
+                                  {activeColumns.includes('Action') && (
+                                    <div className="w-24">
+                                      <select
+                                        value={
+                                          Object.prototype.hasOwnProperty.call(
+                                            actionDrafts,
+                                            rowKey
+                                          )
+                                            ? actionDrafts[rowKey] ?? ""
+                                            : row?.["Action"] ?? ""
+                                        }
+                                        onChange={(event) =>
+                                          handleActionChange(
+                                            activeTab,
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      >
+                                        <option value="">Action</option>
+                                        {ACTION_OPTIONS.map((option) => (
+                                          <option key={option} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Action Reason Field */}
+                                  {activeColumns.includes('Action Reason') && (
+                                    <div className="w-36">
+                                      {(() => {
+                                        const actionValue = Object.prototype.hasOwnProperty.call(
+                                          actionDrafts,
+                                          rowKey
+                                        )
+                                          ? actionDrafts[rowKey]
+                                          : row?.["Action"];
+                                        const shouldShow = actionValue === "Reject" || actionValue === "Pending";
+                                        if (!shouldShow) {
+                                          return <div className="h-6"></div>; // Maintain consistent height
+                                        }
+                                        return (
+                                          <input
+                                            type="text"
+                                            value={
+                                              Object.prototype.hasOwnProperty.call(
+                                                actionReasonDrafts,
+                                                rowKey
+                                              )
+                                                ? actionReasonDrafts[rowKey] ?? ""
+                                                : row?.["Action Reason"] ?? ""
+                                            }
+                                            onChange={(event) =>
+                                              handleActionReasonChange(
+                                                activeTab,
+                                                rowKey,
+                                                event.target.value
+                                              )
+                                            }
+                                            placeholder="Reason..."
+                                            className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                          />
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
                               ) : (
                                 <span>{toDisplayValue(row?.[column])}</span>
                               )}
@@ -2272,17 +2380,17 @@ const CompanyProcessor = () => {
         ) : null}
       </section>
       {addLedgerModal.open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-[98vw] max-w-[98vw] p-6 bg-white rounded-2xl shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3 className="text-2xl font-semibold text-slate-900">
                 Add ledger name
               </h3>
               <p className="text-sm text-slate-600">
                 Newly added names appear instantly in the dropdown list.
               </p>
             </div>
-            <form className="space-y-4" onSubmit={handleAddLedgerSubmit}>
+            <form onSubmit={handleAddLedgerSubmit} className="space-y-4">
               <input
                 type="text"
                 value={addLedgerModal.value}
