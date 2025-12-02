@@ -61,6 +61,38 @@ const toDisplayValue = (value) => {
   return String(value);
 };
 
+const SUPPLIER_NAME_KEYS = [
+  "Supplier Name",
+  "supplierName",
+  "supplier name",
+  "Supplier",
+  "Supplier/Customer Name",
+  "Party Name",
+  "Party",
+  "Vendor Name",
+  "Trade Name",
+  "tradeName",
+];
+
+const getNormalizedSupplierName = (row = {}) => {
+  for (const key of SUPPLIER_NAME_KEYS) {
+    if (!row || typeof row !== "object") continue;
+    if (!Object.prototype.hasOwnProperty.call(row, key)) continue;
+    const value = row[key];
+    if (value === null || value === undefined) continue;
+    const trimmed = String(value).trim();
+    if (!trimmed) continue;
+    return {
+      normalized: trimmed.toLowerCase(),
+      original: trimmed,
+    };
+  }
+  return {
+    normalized: "",
+    original: "",
+  };
+};
+
 // Disallow ledger names that should be separated into a disallow sheet
 const DISALLOW_LEDGER_NAMES = [
   "Penalty [disallow]",
@@ -135,6 +167,14 @@ const B2BCompanyHistory = () => {
   const [modalAcceptCreditDrafts, setModalAcceptCreditDrafts] = useState({});
   const [modalActionDrafts, setModalActionDrafts] = useState({});
   const [modalActionReasonDrafts, setModalActionReasonDrafts] = useState({});
+  const [
+    modalLedgerPropagationSelections,
+    setModalLedgerPropagationSelections,
+  ] = useState({});
+  const [
+    modalActionPropagationSelections,
+    setModalActionPropagationSelections,
+  ] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -1512,6 +1552,24 @@ const B2BCompanyHistory = () => {
                     {ledgerModalRows.map((row, rowIdx) => {
                       const rowKey = getProcessedRowKey(row, rowIdx);
                       const ledgerValue = modalLedgerInputs[rowKey] ?? "";
+                      const ledgerPropagationState =
+                        modalLedgerPropagationSelections[`${ledgerModal.activeTab}-${rowKey}`];
+                      const ledgerPropagationTitle = ledgerPropagationState
+                        ? ledgerPropagationState.matches
+                          ? `Applied to ${ledgerPropagationState.matches} matching row${
+                              ledgerPropagationState.matches === 1 ? "" : "s"
+                            }`
+                          : "No matching rows were found the last time you applied."
+                        : "Apply this ledger to matching suppliers in later rows.";
+                      const actionPropagationState =
+                        modalActionPropagationSelections[`${ledgerModal.activeTab}-${rowKey}`];
+                      const actionPropagationTitle = actionPropagationState
+                        ? actionPropagationState.matches
+                          ? `Applied to ${actionPropagationState.matches} matching row${
+                              actionPropagationState.matches === 1 ? "" : "s"
+                            }`
+                          : "No matching rows were found the last time you applied."
+                        : "Apply this action (and reason, if any) to matching suppliers in later rows.";
                       return (
                         <tr
                           key={rowKey}
@@ -1560,7 +1618,134 @@ const B2BCompanyHistory = () => {
                                         }}
                                       />
                                     </div>
-                                    
+                                    <div
+                                      className="flex items-center gap-1 pr-1"
+                                      title={ledgerPropagationTitle}
+                                    >
+                                      {(() => {
+                                        const checkboxId = `modal-apply-ledger-${ledgerModal.activeTab}-${rowKey}`;
+                                        return (
+                                          <>
+                                            <input
+                                              id={checkboxId}
+                                              type="checkbox"
+                                              className="h-4 w-4 rounded border-amber-300 text-amber-500 focus:ring-amber-400"
+                                              checked={Boolean(
+                                                ledgerPropagationState
+                                              )}
+                                              onChange={(event) => {
+                                                const checked =
+                                                  event.target.checked;
+                                                const stateKey = `${ledgerModal.activeTab}-${rowKey}`;
+                                                if (!checked) {
+                                                  setModalLedgerPropagationSelections(
+                                                    (prev) => {
+                                                      if (!prev[stateKey])
+                                                        return prev;
+                                                      const next = { ...prev };
+                                                      delete next[stateKey];
+                                                      return next;
+                                                    }
+                                                  );
+                                                  return;
+                                                }
+
+                                                const {
+                                                  normalized: sourceSupplierNormalized,
+                                                  original: sourceSupplier,
+                                                } = getNormalizedSupplierName(
+                                                  row
+                                                );
+                                                if (!sourceSupplierNormalized) {
+                                                  setStatus({
+                                                    type: "error",
+                                                    message:
+                                                      "Supplier name missing for this row, nothing to match against.",
+                                                  });
+                                                  return;
+                                                }
+
+                                                const trimmedLedger =
+                                                  String(
+                                                    ledgerValue ?? ""
+                                                  ).trim();
+                                                if (!trimmedLedger) {
+                                                  setStatus({
+                                                    type: "error",
+                                                    message:
+                                                      "Select a ledger name before applying it to other rows.",
+                                                  });
+                                                  return;
+                                                }
+
+                                                let appliedCount = 0;
+                                                for (
+                                                  let idx = rowIdx + 1;
+                                                  idx < ledgerModalRows.length;
+                                                  idx += 1
+                                                ) {
+                                                  const targetRow =
+                                                    ledgerModalRows[idx];
+                                                  const {
+                                                    normalized: candidateSupplierNormalized,
+                                                  } = getNormalizedSupplierName(
+                                                    targetRow
+                                                  );
+                                                  if (
+                                                    candidateSupplierNormalized &&
+                                                    candidateSupplierNormalized ===
+                                                      sourceSupplierNormalized
+                                                  ) {
+                                                    const targetRowKey =
+                                                      getProcessedRowKey(
+                                                        targetRow,
+                                                        idx
+                                                      );
+                                                    modalHandleLedgerInputChange(
+                                                      targetRowKey,
+                                                      trimmedLedger
+                                                    );
+                                                    appliedCount += 1;
+                                                  }
+                                                }
+
+                                                setModalLedgerPropagationSelections(
+                                                  (prev) => ({
+                                                    ...prev,
+                                                    [stateKey]: {
+                                                      ledger: trimmedLedger,
+                                                      supplier: sourceSupplier,
+                                                      matches: appliedCount,
+                                                      appliedAt: Date.now(),
+                                                    },
+                                                  })
+                                                );
+
+                                                setStatus({
+                                                  type: appliedCount
+                                                    ? "success"
+                                                    : "info",
+                                                  message: appliedCount
+                                                    ? `Applied ledger to ${appliedCount} matching row${
+                                                        appliedCount > 1
+                                                          ? "s"
+                                                          : ""
+                                                      }.`
+                                                    : "No later rows found with the same supplier name.",
+                                                });
+                                              }}
+                                            />
+                                            <label
+                                              htmlFor={checkboxId}
+                                              className="text-[10px] text-slate-500 whitespace-nowrap cursor-pointer select-none"
+                                            >
+                                              Apply below
+                                            </label>
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
+
                                     {/* Accept Credit Field */}
                                     {ledgerModalColumns.includes('Accept Credit') && (
                                       <div className="w-20">
@@ -1607,7 +1792,7 @@ const B2BCompanyHistory = () => {
                                     
                                     {/* Action Field */}
                                     {ledgerModalColumns.includes('Action') && (
-                                      <div className="w-20">
+                                      <div className="w-32 flex items-center gap-1">
                                         <select
                                           value={getModalActionValueForRow(row, rowKey) ?? ""}
                                           onChange={(event) =>
@@ -1625,6 +1810,174 @@ const B2BCompanyHistory = () => {
                                             </option>
                                           ))}
                                         </select>
+                                        {(() => {
+                                          const checkboxId = `modal-apply-action-${ledgerModal.activeTab}-${rowKey}`;
+                                          return (
+                                            <div
+                                              className="flex items-center gap-1"
+                                              title={actionPropagationTitle}
+                                            >
+                                              <input
+                                                id={checkboxId}
+                                                type="checkbox"
+                                                className="h-4 w-4 rounded border-amber-300 text-amber-500 focus:ring-amber-400"
+                                                checked={Boolean(
+                                                  actionPropagationState
+                                                )}
+                                                onChange={(event) => {
+                                                  const checked =
+                                                    event.target.checked;
+                                                  const stateKey = `${ledgerModal.activeTab}-${rowKey}`;
+                                                  if (!checked) {
+                                                    setModalActionPropagationSelections(
+                                                      (prev) => {
+                                                        if (!prev[stateKey])
+                                                          return prev;
+                                                        const next = { ...prev };
+                                                        delete next[stateKey];
+                                                        return next;
+                                                      }
+                                                    );
+                                                    return;
+                                                  }
+
+                                                  const {
+                                                    normalized: sourceSupplierNormalized,
+                                                    original: sourceSupplier,
+                                                  } = getNormalizedSupplierName(
+                                                    row
+                                                  );
+                                                  if (!sourceSupplierNormalized) {
+                                                    setStatus({
+                                                      type: "error",
+                                                      message:
+                                                        "Supplier name missing for this row, nothing to match against.",
+                                                    });
+                                                    return;
+                                                  }
+
+                                                  const sourceAction =
+                                                    getModalActionValueForRow(
+                                                      row,
+                                                      rowKey
+                                                    );
+                                                  const hasReason =
+                                                    sourceAction ===
+                                                      "Reject" ||
+                                                    sourceAction === "Pending";
+                                                  const sourceReasonRaw =
+                                                    hasReason
+                                                      ? (() => {
+                                                          const hasDraft =
+                                                            Object.prototype.hasOwnProperty.call(
+                                                              modalActionReasonDrafts,
+                                                              rowKey
+                                                            );
+                                                          const draftValue =
+                                                            hasDraft
+                                                              ? modalActionReasonDrafts[
+                                                                  rowKey
+                                                                ]
+                                                              : undefined;
+                                                          const sourceValue =
+                                                            draftValue !==
+                                                            undefined
+                                                              ? draftValue
+                                                              : row?.[
+                                                                  "Action Reason"
+                                                                ] ?? "";
+                                                          return String(
+                                                            sourceValue ?? ""
+                                                          ).trim();
+                                                        })()
+                                                      : "";
+
+                                                  if (!sourceAction) {
+                                                    setStatus({
+                                                      type: "error",
+                                                      message:
+                                                        "Select an action before applying it to other rows.",
+                                                    });
+                                                    return;
+                                                  }
+
+                                                  let appliedCount = 0;
+                                                  for (
+                                                    let idx = rowIdx + 1;
+                                                    idx <
+                                                    ledgerModalRows.length;
+                                                    idx += 1
+                                                  ) {
+                                                    const targetRow =
+                                                      ledgerModalRows[idx];
+                                                    const {
+                                                      normalized: candidateSupplierNormalized,
+                                                    } =
+                                                      getNormalizedSupplierName(
+                                                        targetRow
+                                                      );
+                                                    if (
+                                                      candidateSupplierNormalized &&
+                                                      candidateSupplierNormalized ===
+                                                        sourceSupplierNormalized
+                                                    ) {
+                                                      const targetRowKey =
+                                                        getProcessedRowKey(
+                                                          targetRow,
+                                                          idx
+                                                        );
+                                                      handleLedgerModalActionChange(
+                                                        targetRowKey,
+                                                        sourceAction
+                                                      );
+                                                      if (hasReason) {
+                                                        handleLedgerModalActionReasonChange(
+                                                          targetRowKey,
+                                                          sourceReasonRaw
+                                                        );
+                                                      }
+                                                      appliedCount += 1;
+                                                    }
+                                                  }
+
+                                                  setModalActionPropagationSelections(
+                                                    (prev) => ({
+                                                      ...prev,
+                                                      [stateKey]: {
+                                                        action: sourceAction,
+                                                        reason: hasReason
+                                                          ? sourceReasonRaw
+                                                          : "",
+                                                        supplier: sourceSupplier,
+                                                        matches: appliedCount,
+                                                        appliedAt: Date.now(),
+                                                      },
+                                                    })
+                                                  );
+
+                                                  setStatus({
+                                                    type: appliedCount
+                                                      ? "success"
+                                                      : "info",
+                                                    message: appliedCount
+                                                      ? `Applied action to ${appliedCount} matching row${
+                                                          appliedCount > 1
+                                                            ? "s"
+                                                            : ""
+                                                        }.`
+                                                      : "No later rows found with the same supplier name.",
+                                                  });
+                                                }}
+                                              />
+                                              <label
+                                                htmlFor={checkboxId}
+                                                className="text-[10px] text-slate-500 whitespace-nowrap cursor-pointer select-none"
+                                              >
+                                                Apply below
+                                              </label>
+                                            </div>
+                                          );
+                                        })()}
                                       </div>
                                     )}
                                     

@@ -186,6 +186,38 @@ const pick = (row, label) => {
   return row[label] ?? "";
 };
 
+const SUPPLIER_NAME_KEYS = [
+  "Supplier Name",
+  "supplierName",
+  "supplier name",
+  "Supplier",
+  "Supplier/Customer Name",
+  "Party Name",
+  "Party",
+  "Vendor Name",
+  "Trade Name",
+  "tradeName",
+];
+
+const getNormalizedSupplierName = (row = {}) => {
+  for (const key of SUPPLIER_NAME_KEYS) {
+    if (!row || typeof row !== "object") continue;
+    if (!Object.prototype.hasOwnProperty.call(row, key)) continue;
+    const value = row[key];
+    if (value === null || value === undefined) continue;
+    const trimmed = String(value).trim();
+    if (!trimmed) continue;
+    return {
+      normalized: trimmed.toLowerCase(),
+      original: trimmed,
+    };
+  }
+  return {
+    normalized: "",
+    original: "",
+  };
+};
+
 const formatDate = (value) => {
   if (!value) return "";
   const date = new Date(value);
@@ -268,6 +300,12 @@ const CompanyProcessor = () => {
   const [partyMasters, setPartyMasters] = useState([]);
   const [partyMastersLoading, setPartyMastersLoading] = useState(false);
   const [missingSuppliers, setMissingSuppliers] = useState([]);
+  const [ledgerPropagationSelections, setLedgerPropagationSelections] = useState(
+    {}
+  );
+  const [actionPropagationSelections, setActionPropagationSelections] = useState(
+    {}
+  );
   const [acceptCreditDrafts, setAcceptCreditDrafts] = useState({});
   const [actionDrafts, setActionDrafts] = useState({});
   const [actionReasonDrafts, setActionReasonDrafts] = useState({});
@@ -441,6 +479,87 @@ const CompanyProcessor = () => {
       });
     },
     [getRowKey]
+  );
+
+  const handleLedgerPropagationToggle = useCallback(
+    ({
+      checked,
+      rowIdx,
+      rows,
+      sourceRow,
+      ledgerValue,
+      handleChange,
+      tabKey,
+      rowKey,
+    }) => {
+      const stateKey = `${tabKey}-${rowKey}`;
+
+      if (!checked) {
+        setLedgerPropagationSelections((prev) => {
+          if (!prev[stateKey]) return prev;
+          const next = { ...prev };
+          delete next[stateKey];
+          return next;
+        });
+        return;
+      }
+
+      const trimmedLedger = String(ledgerValue ?? "").trim();
+      if (!trimmedLedger) {
+        setStatus({
+          type: "error",
+          message: "Select a ledger name before applying it to other rows.",
+        });
+        return;
+      }
+
+      const { normalized: sourceSupplierNormalized, original: sourceSupplier } =
+        getNormalizedSupplierName(sourceRow);
+      if (!sourceSupplierNormalized) {
+        setStatus({
+          type: "error",
+          message:
+            "Supplier name missing for this row, nothing to match against.",
+        });
+        return;
+      }
+
+      let appliedCount = 0;
+      for (let idx = rowIdx + 1; idx < rows.length; idx += 1) {
+        const targetRow = rows[idx];
+        const {
+          normalized: candidateSupplierNormalized,
+        } = getNormalizedSupplierName(targetRow);
+        if (
+          candidateSupplierNormalized &&
+          candidateSupplierNormalized === sourceSupplierNormalized
+        ) {
+          const targetRowKey = getRowKey(targetRow, idx);
+          handleChange(targetRowKey, trimmedLedger);
+          appliedCount += 1;
+        }
+      }
+
+      setLedgerPropagationSelections((prev) => ({
+        ...prev,
+        [stateKey]: {
+          ledger: trimmedLedger,
+          supplier: sourceSupplier,
+          matches: appliedCount,
+          appliedAt: Date.now(),
+        },
+      }));
+
+      setStatus({
+        type: appliedCount ? "success" : "info",
+        message: appliedCount
+          ? `Applied ledger to ${appliedCount} matching row${
+              appliedCount > 1 ? "s" : ""
+            }.`
+          : "No later rows found with the same supplier name.",
+      });
+    },
+    [getRowKey, setStatus, setLedgerPropagationSelections]
   );
 
   const {
@@ -754,6 +873,109 @@ const CompanyProcessor = () => {
       setDisallowExtraDirtyState,
       isActionDirtyForRow,
       isAcceptDirtyForRow,
+    ]
+  );
+
+  const handleActionPropagationToggle = useCallback(
+    ({ checked, rowIdx, rows, sourceRow, tabKey, rowKey }) => {
+      const stateKey = `${tabKey}-${rowKey}`;
+
+      if (!checked) {
+        setActionPropagationSelections((prev) => {
+          if (!prev[stateKey]) return prev;
+          const next = { ...prev };
+          delete next[stateKey];
+          return next;
+        });
+        return;
+      }
+
+      const { normalized: sourceSupplierNormalized, original: sourceSupplier } =
+        getNormalizedSupplierName(sourceRow);
+      if (!sourceSupplierNormalized) {
+        setStatus({
+          type: "error",
+          message:
+            "Supplier name missing for this row, nothing to match against.",
+        });
+        return;
+      }
+
+      const sourceAction = getActionValueForRow(sourceRow, rowKey);
+      const hasReason =
+        sourceAction === "Reject" || sourceAction === "Pending";
+      const sourceReasonRaw = hasReason
+        ? (() => {
+            const hasDraft = Object.prototype.hasOwnProperty.call(
+              actionReasonDrafts,
+              rowKey
+            );
+            const draftValue = hasDraft
+              ? actionReasonDrafts[rowKey]
+              : undefined;
+            const sourceValue =
+              draftValue !== undefined
+                ? draftValue
+                : sourceRow?.["Action Reason"] ?? "";
+            return String(sourceValue ?? "").trim();
+          })()
+        : "";
+
+      if (!sourceAction) {
+        setStatus({
+          type: "error",
+          message: "Select an action before applying it to other rows.",
+        });
+        return;
+      }
+
+      let appliedCount = 0;
+      for (let idx = rowIdx + 1; idx < rows.length; idx += 1) {
+        const targetRow = rows[idx];
+        const {
+          normalized: candidateSupplierNormalized,
+        } = getNormalizedSupplierName(targetRow);
+        if (
+          candidateSupplierNormalized &&
+          candidateSupplierNormalized === sourceSupplierNormalized
+        ) {
+          const targetRowKey = getRowKey(targetRow, idx);
+          handleActionChange(tabKey, targetRowKey, sourceAction);
+          if (hasReason) {
+            handleActionReasonChange(tabKey, targetRowKey, sourceReasonRaw);
+          }
+          appliedCount += 1;
+        }
+      }
+
+      setActionPropagationSelections((prev) => ({
+        ...prev,
+        [stateKey]: {
+          action: sourceAction,
+          reason: hasReason ? sourceReasonRaw : "",
+          supplier: sourceSupplier,
+          matches: appliedCount,
+          appliedAt: Date.now(),
+        },
+      }));
+
+      setStatus({
+        type: appliedCount ? "success" : "info",
+        message: appliedCount
+          ? `Applied action to ${appliedCount} matching row${
+              appliedCount > 1 ? "s" : ""
+            }.`
+          : "No later rows found with the same supplier name.",
+      });
+    },
+    [
+      getRowKey,
+      setStatus,
+      setActionPropagationSelections,
+      getActionValueForRow,
+      actionReasonDrafts,
+      handleActionChange,
+      handleActionReasonChange,
     ]
   );
 
@@ -2201,6 +2423,15 @@ const CompanyProcessor = () => {
                     const ledgerValue = activeLedgerInputs[rowKey] ?? "";
                     const handleChange = activeHandleChange;
                     const columns = activeColumns;
+                    const propagationState =
+                      ledgerPropagationSelections[`${activeTab}-${rowKey}`];
+                    const propagationTitle = propagationState
+                      ? propagationState.matches
+                        ? `Applied to ${propagationState.matches} matching row${
+                            propagationState.matches === 1 ? "" : "s"
+                          }`
+                        : "No matching rows were found the last time you applied."
+                      : "Apply this ledger to matching suppliers in later rows.";
                     
                     return (
                       <tr
@@ -2252,6 +2483,42 @@ const CompanyProcessor = () => {
                                       }}
                                     />
                                   </div>
+                                  <div
+                                    className="flex items-center gap-1 pr-1"
+                                    title={propagationTitle}
+                                  >
+                                    {(() => {
+                                      const checkboxId = `apply-ledger-${activeTab}-${rowKey}`;
+                                      return (
+                                        <>
+                                          <input
+                                            id={checkboxId}
+                                            type="checkbox"
+                                            className="h-4 w-4 rounded border-amber-300 text-amber-500 focus:ring-amber-400"
+                                            checked={Boolean(propagationState)}
+                                            onChange={(event) =>
+                                              handleLedgerPropagationToggle({
+                                                checked: event.target.checked,
+                                                rowIdx,
+                                                rows: activeRows,
+                                                sourceRow: row,
+                                                ledgerValue,
+                                                handleChange,
+                                                tabKey: activeTab,
+                                                rowKey,
+                                              })
+                                            }
+                                          />
+                                          <label
+                                            htmlFor={checkboxId}
+                                            className="text-[10px] text-slate-500 whitespace-nowrap cursor-pointer select-none"
+                                          >
+                                            Apply below
+                                          </label>
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
                                   
                                   {/* Accept Credit Field */}
                                   {activeColumns.includes('Accept Credit') && (
@@ -2295,7 +2562,7 @@ const CompanyProcessor = () => {
                                   
                                   {/* Action Field */}
                                   {activeColumns.includes('Action') && (
-                                    <div className="w-24">
+                                    <div className="w-36 flex items-center gap-1">
                                       <select
                                         value={
                                           Object.prototype.hasOwnProperty.call(
@@ -2321,6 +2588,51 @@ const CompanyProcessor = () => {
                                           </option>
                                         ))}
                                       </select>
+                                      {(() => {
+                                        const actionState =
+                                          actionPropagationSelections[
+                                            `${activeTab}-${rowKey}`
+                                          ];
+                                        const actionTitle = actionState
+                                          ? actionState.matches
+                                            ? `Applied to ${actionState.matches} matching row${
+                                                actionState.matches === 1
+                                                  ? ""
+                                                  : "s"
+                                              }`
+                                            : "No matching rows were found the last time you applied."
+                                          : "Apply this action (and reason, if any) to matching suppliers in later rows.";
+                                        const checkboxId = `apply-action-${activeTab}-${rowKey}`;
+                                        return (
+                                          <div
+                                            className="flex items-center gap-1"
+                                            title={actionTitle}
+                                          >
+                                            <input
+                                              id={checkboxId}
+                                              type="checkbox"
+                                              className="h-4 w-4 rounded border-amber-300 text-amber-500 focus:ring-amber-400"
+                                              checked={Boolean(actionState)}
+                                              onChange={(event) =>
+                                                handleActionPropagationToggle({
+                                                  checked: event.target.checked,
+                                                  rowIdx,
+                                                  rows: activeRows,
+                                                  sourceRow: row,
+                                                  tabKey: activeTab,
+                                                  rowKey,
+                                                })
+                                              }
+                                            />
+                                            <label
+                                              htmlFor={checkboxId}
+                                              className="text-[10px] text-slate-500 whitespace-nowrap cursor-pointer select-none"
+                                            >
+                                              Apply below
+                                            </label>
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
                                   )}
                                   
