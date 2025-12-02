@@ -1,4 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import updaterPkg from "electron-updater";
+const { autoUpdater } = updaterPkg;
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +31,7 @@ let backendProcess = null;
 let frontendProcess = null;
 let isQuitting = false;
 let ipcHandlersRegistered = false;
+let autoUpdateInitialized = false;
 
 const getDevServerPort = () => {
   try {
@@ -425,6 +428,69 @@ const registerIpcHandlers = () => {
   ipcHandlersRegistered = true;
 };
 
+const initAutoUpdater = () => {
+  if (autoUpdateInitialized) return;
+  autoUpdateInitialized = true;
+
+  if (!app.isPackaged || isDevLike) {
+    console.log("[updater] Skipping auto-update in development.");
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.logger = console;
+
+  autoUpdater.on("error", (error) => {
+    console.error("[updater] Error:", error);
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[updater] Update available:", info?.version ?? "unknown version");
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[updater] No updates available.");
+  });
+
+  autoUpdater.on("update-downloaded", async (_event, _notes, releaseName) => {
+    try {
+      if (!mainWindow) return;
+      const { response } = await dialog.showMessageBox(mainWindow, {
+        type: "question",
+        buttons: ["Install now", "Later"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "Update available",
+        message: `A new version of Tally Helper (${releaseName}) has been downloaded.`,
+        detail:
+          "Install now to update to the latest version. The application will restart during the update.",
+      });
+
+      if (response === 0) {
+        isQuitting = true;
+        setImmediate(() => {
+          autoUpdater.quitAndInstall();
+        });
+      }
+    } catch (error) {
+      console.error("[updater] Failed to prompt for update:", error);
+    }
+  });
+
+  // Check for updates a few seconds after startup to allow network to come up.
+  setTimeout(() => {
+    autoUpdater
+      .checkForUpdates()
+      .then(() => {
+        console.log("[updater] Update check initiated.");
+      })
+      .catch((error) => {
+        console.error("[updater] Failed to check for updates:", error);
+      });
+  }, 8000);
+};
+
 const bootstrap = async () => {
   const dataDir = await ensurePreferredDataDir();
   setBaseDir(dataDir);
@@ -441,6 +507,7 @@ const bootstrap = async () => {
     );
   }
   await createMainWindow();
+  initAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
