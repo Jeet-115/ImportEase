@@ -29,7 +29,6 @@
       "main.js",
       "preload.js",
       "fileService.js",
-      "dist/win-unpacked/**/*",
       "../client/dist/**/*",
       "../backend/**/*",
       "!**/node_modules/*/{test,__tests__,example,examples}/**"
