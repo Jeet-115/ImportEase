@@ -64,11 +64,12 @@ const Companyselector = () => {
             Step 1
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
-            Choose a company to begin
+            Step 1: Choose the client you want to work on
           </h1>
           <p className="text-base text-slate-600">
-            We’ll use this company’s GST details while processing every file you
-            upload. Don’t worry—you can come back anytime and pick another.
+            ImportEase will use this client&apos;s name, GSTIN and state for the
+            purchase register. Pick the client first, then on the next screen
+            you&apos;ll upload that client&apos;s GSTR-2B Excel file.
           </p>
         </motion.header>
 

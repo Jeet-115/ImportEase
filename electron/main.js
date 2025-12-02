@@ -179,7 +179,7 @@ const createMainWindow = async () => {
     minHeight: 700,
     show: false,
     backgroundColor: "#0C0C0C",
-    title: "Tally Helper",
+    title: "ImportEase",
     webPreferences: {
       preload: path.resolve(__dirname, "preload.js"),
       contextIsolation: true,

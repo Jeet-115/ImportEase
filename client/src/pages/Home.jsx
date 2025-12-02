@@ -7,6 +7,7 @@ import {
   FiSettings,
   FiUsers,
 } from "react-icons/fi";
+import logo from "/logo.png";
 import { useNavigate } from "react-router-dom";
 
 const Home = () => {
@@ -24,48 +25,56 @@ const Home = () => {
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.1 }}
       >
-        <p className="inline-flex items-center gap-2 rounded-full bg-amber-100/80 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-amber-700">
-          <FiCornerDownRight />
-          Guided workflow
-        </p>
+        <div className="flex flex-col items-center gap-3">
+          <img
+            src={logo}
+            alt="ImportEase logo"
+            className="h-12 w-12 rounded-xl shadow-sm"
+          />
+          <p className="inline-flex items-center gap-2 rounded-full bg-amber-100/80 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-amber-700">
+            <FiCornerDownRight />
+            Guided workflow
+          </p>
+        </div>
         <h1 className="text-4xl font-bold text-slate-900">
-          Tally Helper, simplified for everyone
+          ImportEase – GST imports made simple for CAs
         </h1>
         <p className="text-base text-slate-600 max-w-2xl mx-auto">
-          Upload GST data, create polished purchase registers, and keep every
-          company record in-sync. Built with clear instructions so even
-          non-technical teammates feel confident.
+          Think of this as your assistant for GSTR-2B: first pick a company,
+          then upload the Excel, review suggested ledgers and actions, and
+          finally download a clean purchase register for Tally. Every screen
+          explains the next step so non-technical users can follow along safely.
         </p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-left">
           {[
             {
               icon: <FiSettings />,
               title: "Company Masters",
-              text: "Stay on top of addresses, GSTINs, and contacts.",
+              text: "Add / update client details (address, GSTIN, etc.). Do this once per client.",
               action: () => navigate("/company-masters"),
             },
             {
               icon: <FiLayers />,
               title: "Select & Process",
-              text: "Pick a company and transform your GSTR-2B.",
+              text: "For a selected client, upload GSTR-2B and prepare the purchase register step by step.",
               action: () => navigate("/company-selector"),
             },
             {
               icon: <FiClipboard />,
               title: "Review History",
-              text: "Download past imports or mismatched rows.",
+              text: "Open previous runs for a client, re-download Excel, or fix ledgers later.",
               action: () => navigate("/b2b-history"),
             },
             {
               icon: <FiBook />,
               title: "Ledger Names",
-              text: "Curate purchase ledger titles for mapping.",
+              text: "Define standard purchase ledgers you want to reuse while mapping invoices.",
               action: () => navigate("/ledger-names"),
             },
             {
               icon: <FiUsers />,
               title: "Manage Party Masters",
-              text: "Upload purchase registers and manage party details.",
+              text: "Maintain party-wise details to help with consistent ledger selection.",
               action: () => navigate("/party-masters"),
             },
           ].map(({ icon, title, text, action }) => (

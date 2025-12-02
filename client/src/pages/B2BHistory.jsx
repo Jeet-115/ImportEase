@@ -53,14 +53,15 @@ const B2BHistory = () => {
           animate={{ y: 0, opacity: 1 }}
         >
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
-            History
+            Step 3 (Optional)
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
-            Review every import in seconds
+            Open previous runs for any client
           </h1>
           <p className="text-base text-slate-600">
-            Tap a company to open all of its processed files, mismatched data,
-            and download-ready Excel sheets.
+            After you have processed GSTR-2B for a client in ImportEase, come
+            here to re-open that work: download the same Excel, see mismatched
+            rows again, or adjust ledgers using the Edit Ledger screen.
           </p>
         </motion.header>
 

@@ -1,7 +1,7 @@
 {
-  "name": "electron",
+  "name": "importease",
   "version": "1.0.0",
-  "description": "",
+  "description": "ImportEase - Guided GSTR-2B to purchase register helper for CAs",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -20,8 +20,8 @@
     "electron-updater": "^6.6.2"
   },
   "build": {
-    "appId": "com.jeet115.tallyhelper",
-    "productName": "Tally Helper",
+    "appId": "com.jeet115.importease",
+    "productName": "ImportEase",
     "directories": {
       "output": "dist"
     },
@@ -38,11 +38,12 @@
       {
         "provider": "github",
         "owner": "Jeet-115",
-        "repo": "tallyhelpersoftwareversion"
+        "repo": "ImportEase"
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "../client/public/logo.png"
     },
     "nsis": {
       "oneClick": false,

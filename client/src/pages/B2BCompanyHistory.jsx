@@ -1226,7 +1226,7 @@ const B2BCompanyHistory = () => {
           animate={{ y: 0, opacity: 1 }}
         >
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
-            Company
+            ImportEase – client history
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
             {company?.companyName || "Company"}
@@ -1240,10 +1240,12 @@ const B2BCompanyHistory = () => {
           </div>
           <div className="flex flex-wrap gap-3 text-xs text-amber-700">
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1">
-              <FiInfo /> Download Excel or preview data anytime
+              <FiInfo /> Use this page when you need to re-download Excel or
+              correct ledgers for a past month.
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-3 py-1 text-rose-600">
-              <FiLayers /> Mismatched preview hides tax-slab columns
+              <FiLayers /> &quot;Mismatched&quot; shows supplier-wise
+              differences; other buttons give ready-to-import Excel.
             </span>
           </div>
         </motion.header>

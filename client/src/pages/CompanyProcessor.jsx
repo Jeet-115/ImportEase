@@ -2058,10 +2058,10 @@ const CompanyProcessor = () => {
             Step 2
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
-            Prepare the purchase register
+            Step 2: Prepare the purchase register for Tally
           </h1>
           <div className="text-sm text-slate-600 space-y-1">
-            <p>Company: {company.companyName}</p>
+            <p>Client: {company.companyName}</p>
             <p>GSTIN: {company.gstin || "—"}</p>
             <p>State: {company.state}</p>
             {loadingGST ? (
@@ -2070,6 +2070,11 @@ const CompanyProcessor = () => {
               </p>
             ) : null}
           </div>
+          <p className="text-sm text-slate-600 mt-2">
+            Upload the GSTR-2B Excel for this client, then use the tabs below to
+            map &quot;Ledger Name&quot;, mark Accept/Reject/Pending actions, and finally
+            download a ready-to-import Excel for Tally.
+          </p>
         </motion.header>
 
         {status.message ? (
@@ -2085,17 +2090,24 @@ const CompanyProcessor = () => {
         ) : null}
 
         <motion.section
-          className="rounded-3xl border border-dashed border-amber-200 bg-white/90 p-6 shadow-lg backdrop-blur"
+          className="rounded-3xl border border-dashed border-amber-200 bg-white/90 p-6 shadow-lg backdrop-blur space-y-3"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
           <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
             <FiUploadCloud className="text-amber-500" />
-            Upload GSTR-2B Excel
+            Step A – Upload GSTR-2B Excel
           </h2>
           <p className="text-sm text-slate-600">
-            Accepted formats: .xlsx, .xls. We’ll guide you through the rest.
+            Start by selecting the exact GSTR-2B Excel you downloaded from the
+            portal for this client. ImportEase will read only the required
+            sheets.
           </p>
+          <ul className="list-disc list-inside text-xs text-slate-500 space-y-1">
+            <li>Accepted formats: .xlsx, .xls</li>
+            <li>Use one file per month / return period</li>
+            <li>If you picked the wrong file, simply upload again to replace it</li>
+          </ul>
           <label className="mt-4 flex h-36 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/50 text-amber-700 transition hover:bg-amber-50">
             <input
               type="file"
@@ -2124,10 +2136,11 @@ const CompanyProcessor = () => {
                 Step 3
               </p>
               <h3 className="text-xl font-semibold text-slate-900">
-                B2B sheet ready
+                Step B – Check the imported B2B sheet
               </h3>
               <p className="text-sm text-slate-500">
-                {sheetRows.length} rows imported from {fileMeta.name}
+                {sheetRows.length} rows imported from {fileMeta.name}. If the
+                count looks wrong, go back and check the GSTR-2B file.
               </p>
             </div>
             <button
@@ -2135,7 +2148,7 @@ const CompanyProcessor = () => {
               className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
             >
               <FiPlayCircle />
-              Generate custom sheet
+              Generate working sheet
             </button>
           </motion.section>
         ) : null}
@@ -2146,7 +2159,33 @@ const CompanyProcessor = () => {
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
-            <div className="flex flex-wrap gap-3">
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+                  Step C – Map ledgers & actions, then download
+                </p>
+                <p className="text-sm text-slate-600 mt-1">
+                  Use the tabs below (Processed, Reverse Charge, Mismatched,
+                  Disallow) to fill &quot;Ledger Name&quot;, mark whether input tax
+                  credit is accepted, and set the final action for each invoice.
+                </p>
+                <ul className="list-disc list-inside text-xs text-slate-500 space-y-1 mt-2">
+                  <li>
+                    Start with <strong>Processed</strong> – normal invoices
+                    where GSTR-2B and your books agree
+                  </li>
+                  <li>
+                    Use <strong>Mismatched</strong> to decide Accept / Reject /
+                    Pending and capture reasons
+                  </li>
+                  <li>
+                    Download the final Excel only after you have set ledger
+                    names and actions as required
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
               <button
                 onClick={handleDownloadGstr2BExcel}
                 className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-slate-800"
@@ -2236,6 +2275,7 @@ const CompanyProcessor = () => {
                 disallow rows for {processedDoc.company || "company"}.
               </div>
             ) : null}
+            </div>
           </motion.section>
         ) : null}
 
