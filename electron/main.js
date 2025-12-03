@@ -17,6 +17,18 @@ const __dirname = path.dirname(__filename);
 
 const baseEnvIsDev = process.env.NODE_ENV !== "production";
 const isDevLike = baseEnvIsDev || !app.isPackaged;
+
+// Get app path - in packaged apps, this points to resources/app.asar or resources/app
+const getAppPath = () => {
+  if (app.isPackaged) {
+    // In packaged app, app.getAppPath() returns the asar path or unpacked app path
+    return app.getAppPath();
+  }
+  // In development, use __dirname relative path
+  return path.resolve(__dirname, "..");
+};
+
+const APP_PATH = getAppPath();
 const DEV_SERVER_URL =
   process.env.VITE_DEV_SERVER_URL ??
   process.env.FRONTEND_DEV_SERVER ??
@@ -26,6 +38,8 @@ const BACKEND_HEALTHCHECK = `http://localhost:${BACKEND_PORT}/health`;
 const BACKEND_BASE_URL = `http://localhost:${BACKEND_PORT}`;
 const DATA_DIR = getBaseDir(process.env.TALLY_HELPER_DATA_DIR);
 const PRODUCTION_RENDERER_CANDIDATES = [
+  path.join(APP_PATH, "client", "dist", "index.html"),
+  path.join(APP_PATH, "renderer", "index.html"),
   path.resolve(__dirname, "..", "client", "dist", "index.html"),
   path.resolve(__dirname, "renderer", "index.html"),
 ];
@@ -176,6 +190,10 @@ const loadRenderer = async (windowInstance) => {
 };
 
 const createMainWindow = async () => {
+  const preloadPath = app.isPackaged
+    ? path.join(__dirname, "preload.js")
+    : path.resolve(__dirname, "preload.js");
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -185,7 +203,7 @@ const createMainWindow = async () => {
     backgroundColor: "#0C0C0C",
     title: "ImportEase",
     webPreferences: {
-      preload: path.resolve(__dirname, "preload.js"),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -237,12 +255,46 @@ const startBackend = () => {
     return backendProcess;
   }
 
-  const backendEntry = path.resolve(__dirname, "..", "backend", "server.js");
+  // In packaged apps with asar, backend is unpacked to app.asar.unpacked
+  // Try unpacked location first, then fall back to app path
+  let backendEntry;
+  if (app.isPackaged && APP_PATH.endsWith(".asar")) {
+    // Backend is unpacked to app.asar.unpacked/backend/server.js
+    const unpackedPath = APP_PATH.replace(".asar", ".asar.unpacked");
+    const unpackedBackend = path.join(unpackedPath, "backend", "server.js");
+    console.log("[backend] Checking unpacked location:", unpackedBackend);
+    if (fs.existsSync(unpackedBackend)) {
+      backendEntry = unpackedBackend;
+      console.log("[backend] Using unpacked backend:", backendEntry);
+    } else {
+      backendEntry = path.join(APP_PATH, "backend", "server.js");
+      console.log("[backend] Unpacked not found, trying asar:", backendEntry);
+    }
+  } else {
+    // Development or non-asar build
+    backendEntry = path.join(APP_PATH, "backend", "server.js");
+    console.log("[backend] Using app path backend:", backendEntry);
+  }
+
   const backendCwd = path.dirname(backendEntry);
-  const nodeBinary =
-    process.env.BACKEND_NODE ??
-    process.env.npm_node_execpath ??
-    process.execPath;
+  
+  // Verify backend file exists
+  if (!fs.existsSync(backendEntry)) {
+    const error = new Error(`Backend entry not found: ${backendEntry}`);
+    console.error("[backend] Backend file not found:", backendEntry);
+    console.error("[backend] APP_PATH:", APP_PATH);
+    console.error("[backend] isPackaged:", app.isPackaged);
+    dialog.showErrorBox(
+      "Backend Startup Error",
+      `Backend server file not found.\n\nExpected: ${backendEntry}\n\nPlease rebuild the application.`,
+    );
+    throw error;
+  }
+  
+  console.log("[backend] Starting backend from:", backendEntry);
+  
+  // Use Electron executable as Node.js with ELECTRON_RUN_AS_NODE flag
+  const nodeBinary = process.execPath;
 
   backendProcess = spawn(nodeBinary, [backendEntry], {
     env: {
@@ -250,6 +302,7 @@ const startBackend = () => {
       ELECTRON_RUN_AS_NODE: "1",
       PORT: BACKEND_PORT,
       TALLY_HELPER_DATA_DIR: DATA_DIR,
+      NODE_ENV: "production",
     },
     cwd: backendCwd,
     stdio: "pipe",

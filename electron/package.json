@@ -48,6 +48,9 @@
       "backend/**/*",
       "!**/node_modules/*/{test,__tests__,example,examples}/**"
     ],
+    "asarUnpack": [
+      "backend/**/*"
+    ],
     "publish": [
       {
         "provider": "github",
