@@ -9,6 +9,8 @@ const safeInvoke = (channel, ...args) =>
 contextBridge.exposeInMainWorld("electronAPI", {
   ping: () => safeInvoke("ping"),
 
+  getDeviceId: () => safeInvoke("get-device-id"),
+
   readJson: async (filename) => {
     const result = await safeInvoke("read-json", filename);
     if (result === undefined || result === null) {
