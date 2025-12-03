@@ -30,8 +30,10 @@
       "main.js",
       "preload.js",
       "fileService.js",
-      "../client/dist/**/*",
-      "../backend/**/*",
+      "!client/node_modules",
+      "!backend/node_modules",
+      "client/dist/**/*",
+      "backend/**/*",
       "!**/node_modules/*/{test,__tests__,example,examples}/**"
     ],
     "publish": [
