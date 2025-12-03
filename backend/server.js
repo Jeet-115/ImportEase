@@ -1,6 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import companyMasterRoutes from "./routes/companymasterroutes.js";
 import gstinNumberRoutes from "./routes/gstinnumberroutes.js";
 import gstr2BImportRoutes from "./routes/gstr2bimportroutes.js";
@@ -13,8 +15,15 @@ import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
 import { connectDB } from "./config/db.js";
 import { softwareAuthGuard } from "./middleware/softwareAuthMiddleware.js";
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({
+  path: path.join(__dirname, ".env.production"),
+});
 const app = express();
+console.log("ENV Loaded From:", path.join(__dirname, ".env.production"));
+console.log("MONGO_URI =", process.env.MONGO_URI);
 
 // Middleware
 const allowedOrigins = [
