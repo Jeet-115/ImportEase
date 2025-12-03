@@ -8,7 +8,8 @@
     "dev:electron": "cd electron && npm start",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:client\" \"npm run dev:electron\"",
     "build:electron": "cd electron && npm run build",
-    "dist": "cd client && npm run build && cd .. && npm run build:electron"
+    "dist": "cd client && npm run build && cd .. && npm run build:electron",
+    "dist:publish": "cd client && npm run build && cd .. && cd electron && npm run publish"
   },
   "devDependencies": {
     "concurrently": "^9.0.1"
