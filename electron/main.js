@@ -6,7 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import crypto from "node:crypto";
+import machineIdPkg from "node-machine-id";
 import { getBaseDir, ensurePreferredDataDir, setBaseDir } from "./fileService.js";
+
+const { machineIdSync } = machineIdPkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -326,6 +330,41 @@ const registerIpcHandlers = () => {
   }
 
   ipcMain.handle("ping", () => "pong");
+
+   ipcMain.handle("get-device-id", async () => {
+    try {
+      const deviceFile = path.join(DATA_DIR, "auth", "device.json");
+      if (fs.existsSync(deviceFile)) {
+        const raw = fs.readFileSync(deviceFile, "utf8");
+        if (raw.trim()) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.deviceId) {
+            return parsed.deviceId;
+          }
+        }
+      }
+
+      const baseId = machineIdSync(true);
+      const hash = crypto
+        .createHash("sha256")
+        .update(baseId)
+        .digest("hex");
+      const deviceId = `DEV-${hash}`;
+
+      const dir = path.dirname(deviceFile);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(
+        deviceFile,
+        JSON.stringify({ deviceId }, null, 2),
+        "utf8",
+      );
+
+      return deviceId;
+    } catch (error) {
+      console.error("[ipc] get-device-id failed:", error);
+      throw error;
+    }
+  });
 
   ipcMain.handle("read-json", async (_, filename) => {
     try {

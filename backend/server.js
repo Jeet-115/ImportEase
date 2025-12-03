@@ -6,9 +6,12 @@ import gstinNumberRoutes from "./routes/gstinnumberroutes.js";
 import gstr2BImportRoutes from "./routes/gstr2bimportroutes.js";
 import ledgerNameRoutes from "./routes/ledgernameroutes.js";
 import partyMasterRoutes from "./routes/partymasterroutes.js";
+import softwareAuthRoutes from "./routes/softwareAuthRoutes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
+import { connectDB } from "./config/db.js";
+import { softwareAuthGuard } from "./middleware/softwareAuthMiddleware.js";
 
 dotenv.config();
 const app = express();
@@ -37,17 +40,21 @@ app.use(
 
 app.use(express.json());
 
-// Routes
+// Public routes
 app.get("/health", (req, res) => {
   console.log("🩺 Health check at:", new Date().toLocaleString());
   res.status(200).send("OK");
 });
 
-app.use("/api/company-master", companyMasterRoutes);
-app.use("/api/gstin-numbers", gstinNumberRoutes);
-app.use("/api/gstr2b-imports", gstr2BImportRoutes);
-app.use("/api/ledger-names", ledgerNameRoutes);
-app.use("/api/party-masters", partyMasterRoutes);
+// Software login (no auth required)
+app.use("/software", softwareAuthRoutes);
+
+// Protected routes (require valid software token / device / subscription)
+app.use("/api/company-master", softwareAuthGuard, companyMasterRoutes);
+app.use("/api/gstin-numbers", softwareAuthGuard, gstinNumberRoutes);
+app.use("/api/gstr2b-imports", softwareAuthGuard, gstr2BImportRoutes);
+app.use("/api/ledger-names", softwareAuthGuard, ledgerNameRoutes);
+app.use("/api/party-masters", softwareAuthGuard, partyMasterRoutes);
 
 // Root route
 app.get("/", (req, res) => {
@@ -55,6 +62,7 @@ app.get("/", (req, res) => {
 });
 
 const bootstrap = async () => {
+  await connectDB();
   await initFileStore();
   await ensureGSTINSeeded();
   await ensureLedgerNamesSeeded();
