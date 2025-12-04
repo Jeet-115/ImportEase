@@ -22,8 +22,12 @@ import {
   uploadPurchaseRegister,
 } from "../services/partymasterservice.js";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
+import PlanRestrictionBanner from "../components/PlanRestrictionBanner.jsx";
+import { getPlanRestrictionMessage } from "../utils/planAccess.js";
 
 const PartyMasterManager = () => {
+  const { user, isPlanRestricted } = useAuth();
   const navigate = useNavigate();
   const [step, setStep] = useState("select"); // 'select', 'manage'
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -43,6 +47,11 @@ const PartyMasterManager = () => {
     targetName: "",
   });
   const [uploadFile, setUploadFile] = useState(null);
+
+  const readOnly = !user?.isMaster && isPlanRestricted;
+  const readOnlyMessage = readOnly
+    ? getPlanRestrictionMessage(user?.planStatus)
+    : "";
 
   useEffect(() => {
     const loadCompanies = async () => {
@@ -104,6 +113,14 @@ const PartyMasterManager = () => {
   };
 
   const handleFileChange = (e) => {
+    if (readOnly) {
+      setStatus({
+        type: "error",
+        message: readOnlyMessage,
+      });
+      e.target.value = "";
+      return;
+    }
     const file = e.target.files?.[0];
     if (file) {
       const ext = file.name.split(".").pop()?.toLowerCase();
@@ -119,6 +136,10 @@ const PartyMasterManager = () => {
   };
 
   const handleUpload = async () => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     if (!uploadFile || !selectedCompany) {
       setStatus({
         type: "error",
@@ -154,6 +175,10 @@ const PartyMasterManager = () => {
 
   const handleAddParty = async (e) => {
     e.preventDefault();
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     const trimmedName = newParty.partyName.trim();
     const trimmedGstin = newParty.gstin.trim();
 
@@ -194,6 +219,10 @@ const PartyMasterManager = () => {
   };
 
   const handleDeleteParty = async (id, name) => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     setSubmitting(true);
     try {
       await deletePartyMaster(id);
@@ -213,6 +242,10 @@ const PartyMasterManager = () => {
   };
 
   const startEditing = (party) => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     setEditingId(party._id);
     setEditingValue({ partyName: party.partyName, gstin: party.gstin });
   };
@@ -224,6 +257,10 @@ const PartyMasterManager = () => {
 
   const handleUpdateParty = async (e) => {
     e.preventDefault();
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     const trimmedName = editingValue.partyName.trim();
     const trimmedGstin = editingValue.gstin.trim();
 
@@ -289,6 +326,8 @@ const PartyMasterManager = () => {
               purchase register Excel file or manually add parties.
             </p>
           </motion.header>
+
+          <PlanRestrictionBanner />
 
           {status.message ? (
             <div
@@ -383,6 +422,8 @@ const PartyMasterManager = () => {
           </p>
         </motion.header>
 
+        <PlanRestrictionBanner />
+
         {status.message ? (
           <div
             className={`rounded-2xl border px-4 py-3 text-sm shadow ${
@@ -418,7 +459,7 @@ const PartyMasterManager = () => {
                 accept=".xls,.xlsx"
                 onChange={handleFileChange}
                 className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
-                disabled={uploading}
+                disabled={uploading || readOnly}
               />
               {uploadFile && (
                 <p className="mt-1 text-xs text-slate-500">
@@ -429,7 +470,7 @@ const PartyMasterManager = () => {
             <button
               type="button"
               onClick={handleUpload}
-              disabled={!uploadFile || uploading}
+              disabled={!uploadFile || uploading || readOnly}
               className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
             >
               <FiUpload />
@@ -466,7 +507,7 @@ const PartyMasterManager = () => {
                   }
                   className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
                   placeholder="Enter party name"
-                  disabled={submitting}
+                disabled={submitting || readOnly}
                 />
               </label>
               <label className="text-sm text-slate-700">
@@ -484,14 +525,14 @@ const PartyMasterManager = () => {
                   }
                   className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
                   placeholder="Enter GSTIN/UIN"
-                  disabled={submitting}
+                disabled={submitting || readOnly}
                 />
               </label>
             </div>
             <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={submitting}
+              disabled={submitting || readOnly}
                 className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
               >
                 {editingId ? <FiSave /> : <FiPlus />}
@@ -600,8 +641,8 @@ const PartyMasterManager = () => {
                           <button
                             type="button"
                             onClick={() => startEditing(party)}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                            disabled={submitting && editingId !== party._id}
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                            disabled={submitting || readOnly}
                           >
                             <FiEdit2 />
                             Edit
@@ -616,7 +657,7 @@ const PartyMasterManager = () => {
                               })
                             }
                             className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                            disabled={submitting}
+                            disabled={submitting || readOnly}
                           >
                             <FiTrash2 />
                             Delete
@@ -643,7 +684,7 @@ const PartyMasterManager = () => {
         onConfirm={() => {
           const { targetId, targetName } = confirmState;
           setConfirmState({ open: false, targetId: null, targetName: "" });
-          if (targetId) {
+          if (targetId && !readOnly) {
             handleDeleteParty(targetId, targetName);
           }
         }}

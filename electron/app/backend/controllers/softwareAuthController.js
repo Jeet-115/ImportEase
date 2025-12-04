@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { User } from "../models/User.js";
+import { determinePlanStatus } from "../utils/subscriptionStatus.js";
 
 const getMasterEmails = () =>
   (process.env.MASTER_ACCOUNTS || "")
@@ -72,12 +73,21 @@ export const loginSoftware = async (req, res) => {
 
     await user.save();
 
+    const planStatus = determinePlanStatus({
+      isMaster,
+      subscriptionActive: user.subscriptionActive,
+      subscriptionExpiry: user.subscriptionExpiry,
+    });
+
     return res.json({
       success: true,
       softwareToken: user.softwareToken,
+      subscriptionActive:
+        user.subscriptionActive === false ? false : true,
       subscriptionExpiry: user.subscriptionExpiry,
       deviceId: isMaster ? null : user.deviceId,
       isMaster,
+      planStatus,
     });
   } catch (error) {
     console.error("[controller] loginSoftware failed:", error);

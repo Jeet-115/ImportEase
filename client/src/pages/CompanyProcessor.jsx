@@ -37,6 +37,9 @@ import {
 import BackButton from "../components/BackButton";
 import LedgerNameDropdown from "../components/LedgerNameDropdown";
 import useLedgerNameEditing from "../hooks/useLedgerNameEditing";
+import { useAuth } from "../context/AuthContext.jsx";
+import PlanRestrictionBanner from "../components/PlanRestrictionBanner.jsx";
+import { getPlanRestrictionMessage } from "../utils/planAccess.js";
 
 const columnMap = {
   gstin: "gstin",
@@ -278,6 +281,11 @@ const CompanyProcessor = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const company = location.state?.company;
+  const { user, isPlanRestricted } = useAuth();
+  const readOnly = !user?.isMaster && isPlanRestricted;
+  const readOnlyMessage = readOnly
+    ? getPlanRestrictionMessage(user?.planStatus)
+    : "";
 
   const [sheetRows, setSheetRows] = useState([]);
   const [generatedRows, setGeneratedRows] = useState([]);
@@ -2037,6 +2045,65 @@ const CompanyProcessor = () => {
           Go now
         </button>
       </main>
+    );
+  }
+
+  if (readOnly) {
+    return (
+      <motion.main
+        className="min-h-screen bg-linear-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <section className="w-full px-6 space-y-6">
+          <BackButton label="Back to selector" fallback="/company-selector" />
+          <motion.header
+            className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur flex flex-col gap-2"
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+              Step 2
+            </p>
+            <h1 className="text-3xl font-bold text-slate-900">
+              Step 2: Prepare the purchase register for Tally
+            </h1>
+            <div className="text-sm text-slate-600 space-y-1">
+              <p>Client: {company.companyName}</p>
+              <p>GSTIN: {company.gstin || "—"}</p>
+              <p>State: {company.state}</p>
+            </div>
+          </motion.header>
+          <PlanRestrictionBanner />
+          <div className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4">
+            <h2 className="text-xl font-semibold text-slate-900">
+              Processing is locked for this account
+            </h2>
+            <p className="text-sm text-slate-600">{readOnlyMessage}</p>
+            <p className="text-sm text-slate-600">
+              You can still open Review History to download past Excel/JSON
+              files for this company. Renew your plan to upload new GSTR-2B
+              files or edit ledger mappings.
+            </p>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => navigate("/b2b-history")}
+                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
+              >
+                Go to Review History
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/")}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Back to dashboard
+              </button>
+            </div>
+          </div>
+        </section>
+      </motion.main>
     );
   }
 

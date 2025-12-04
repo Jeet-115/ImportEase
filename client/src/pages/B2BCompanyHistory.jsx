@@ -19,6 +19,9 @@ import BackButton from "../components/BackButton";
 import ExcelPreviewModal from "../components/ExcelPreviewModal.jsx";
 import LedgerNameDropdown from "../components/LedgerNameDropdown";
 import ConfirmDialog from "../components/ConfirmDialog";
+import PlanRestrictionBanner from "../components/PlanRestrictionBanner.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
+import { getPlanRestrictionMessage } from "../utils/planAccess.js";
 import { fetchCompanyMasterById } from "../services/companymasterservices";
 import {
   fetchImportById,
@@ -137,6 +140,11 @@ const B2BCompanyHistory = () => {
   const { companyId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, isPlanRestricted } = useAuth();
+  const readOnly = !user?.isMaster && isPlanRestricted;
+  const readOnlyMessage = readOnly
+    ? getPlanRestrictionMessage(user?.planStatus)
+    : "";
 
   const [company, setCompany] = useState(location.state?.company || null);
   const [imports, setImports] = useState([]);
@@ -1053,6 +1061,10 @@ const B2BCompanyHistory = () => {
   };
 
   const openProcessedEditor = async (importId) => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     try {
       const doc = await ensureProcessedDoc(importId);
       if (!doc) return;
@@ -1088,6 +1100,10 @@ const B2BCompanyHistory = () => {
     setLedgerModal({ open: false, processed: null, importId: null, activeTab: "processed" });
 
   const handleLedgerModalSave = async () => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     try {
       const updated = await persistLedgerChangesModal();
       if (updated) {
@@ -1114,14 +1130,23 @@ const B2BCompanyHistory = () => {
     }
   };
 
-  const openAddLedgerModal = () =>
+  const openAddLedgerModal = () => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     setAddLedgerModal({ open: true, value: "", submitting: false });
+  };
 
   const closeAddLedgerModal = () =>
     setAddLedgerModal({ open: false, value: "", submitting: false });
 
   const handleAddLedgerSubmit = async (event) => {
     event.preventDefault();
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     const trimmed = addLedgerModal.value.trim();
     if (!trimmed) {
       setStatus({
@@ -1150,6 +1175,11 @@ const B2BCompanyHistory = () => {
 
   const handleDeleteImport = async () => {
     if (!confirmDeleteId) return;
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      setConfirmDeleteId(null);
+      return;
+    }
     setDeleting(true);
     try {
       await deleteImport(confirmDeleteId);
@@ -1250,6 +1280,8 @@ const B2BCompanyHistory = () => {
           </div>
         </motion.header>
 
+        <PlanRestrictionBanner />
+
         <motion.section
           className="rounded-3xl border border-amber-100 bg-white/95 p-4 sm:p-6 shadow-lg backdrop-blur space-y-4"
           initial={{ y: 20, opacity: 0 }}
@@ -1302,7 +1334,9 @@ const B2BCompanyHistory = () => {
                           {/* 2. Edit LedgerMaster */}
                           <button
                             onClick={() => openProcessedEditor(imp._id)}
-                            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={readOnly}
+                            title={readOnly ? readOnlyMessage : "Edit ledger names"}
                           >
                             <FiEdit2 /> Edit LedgerMaster
                           </button>
@@ -1382,7 +1416,9 @@ const B2BCompanyHistory = () => {
                           {/* 8. Delete */}
                           <button
                             onClick={() => setConfirmDeleteId(imp._id)}
-                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={readOnly}
+                            title={readOnly ? readOnlyMessage : "Delete import"}
                           >
                             <FiTrash2 /> Delete
                           </button>
@@ -1406,7 +1442,7 @@ const B2BCompanyHistory = () => {
         </motion.section>
       </section>
 
-      {ledgerModal.open ? (
+      {ledgerModal.open && !readOnly ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-[98vw] max-w-[98vw] rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">
             <header className="flex flex-wrap items-start justify-between gap-4">

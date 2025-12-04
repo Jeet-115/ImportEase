@@ -3,7 +3,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const STORAGE_SUBDIR = "TallyHelperData";
+const STORAGE_SUBDIR = "ImportEaseStorage";
 const DEFAULT_ROOT =
   process.platform === "win32"
     ? path.join("C:", STORAGE_SUBDIR)
@@ -39,9 +39,16 @@ export const ensurePreferredDataDir = async () => {
     return cachedDataDir;
   }
 
-  const preferred =
-    process.env.TALLY_HELPER_DATA_DIR ||
-    (process.platform === "win32" ? DEFAULT_ROOT : DEFAULT_ROOT);
+  const electronApp = getElectronApp();
+  let preferred;
+
+  if (electronApp?.isPackaged) {
+    const exeFolder = path.dirname(process.execPath); // folder where exe is
+    preferred = path.join(exeFolder, STORAGE_SUBDIR);
+  } else {
+    // dev fallback
+    preferred = path.join(process.cwd(), "storage", "data");
+  }
 
   await fs.mkdir(preferred, { recursive: true });
   setBaseDir(preferred);

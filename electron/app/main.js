@@ -8,23 +8,63 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import crypto from "node:crypto";
 import machineIdPkg from "node-machine-id";
-import { getBaseDir, ensurePreferredDataDir, setBaseDir } from "./fileService.js";
 
 const { machineIdSync } = machineIdPkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// fileService.js will be imported dynamically after app is ready
+// This avoids issues with app.getAppPath() not being available at module load time
+let getBaseDir, ensurePreferredDataDir, setBaseDir;
+
+const loadFileService = async () => {
+  // Always try unpacked location first if packaged
+  if (app.isPackaged) {
+    try {
+      const appPath = app.getAppPath();
+      if (appPath.endsWith(".asar")) {
+        const unpackedPath = appPath.replace(".asar", ".asar.unpacked");
+        // fileService.js is at app/fileService.js in unpacked
+        const fileServicePath = path.join(unpackedPath, "app", "fileService.js");
+        console.log("[main] Trying unpacked fileService:", fileServicePath);
+        if (fs.existsSync(fileServicePath)) {
+          const fileUrl = `file:///${fileServicePath.replace(/\\/g, "/")}`;
+          console.log("[main] ✓ Loading from unpacked location");
+          return await import(fileUrl);
+        } else {
+          console.log("[main] ✗ Unpacked fileService not found");
+        }
+      }
+    } catch (error) {
+      console.error("[main] Error loading from unpacked, trying asar:", error.message);
+    }
+    
+    // Fallback: try asar (if fileService.js wasn't unpacked)
+    try {
+      console.log("[main] Trying asar fileService");
+      return await import("./fileService.js");
+    } catch (error) {
+      console.error("[main] ✗ Failed to load from asar:", error.message);
+      throw new Error(`Cannot load fileService.js: ${error.message}`);
+    }
+  }
+  
+  // Development: use relative import (same folder)
+  console.log("[main] Development mode - loading fileService");
+  return await import("./fileService.js");
+};
+
 const baseEnvIsDev = process.env.NODE_ENV !== "production";
 const isDevLike = baseEnvIsDev || !app.isPackaged;
 
-// Get app path - in packaged apps, this points to resources/app.asar or resources/app
+// Get app path - in packaged apps, this points to resources/app.asar/app or resources/app/app
 const getAppPath = () => {
   if (app.isPackaged) {
-    // In packaged app, app.getAppPath() returns the asar path or unpacked app path
+    // In packaged app, app.getAppPath() returns resources/app.asar (which contains app/ folder)
     return app.getAppPath();
   }
-  // In development, use __dirname relative path
+  // In development, we're in app/ folder, so return parent (electron/)
   return path.resolve(__dirname, "..");
 };
 
@@ -36,13 +76,35 @@ const DEV_SERVER_URL =
 const BACKEND_PORT = process.env.BACKEND_PORT ?? "5000";
 const BACKEND_HEALTHCHECK = `http://localhost:${BACKEND_PORT}/health`;
 const BACKEND_BASE_URL = `http://localhost:${BACKEND_PORT}`;
-const DATA_DIR = getBaseDir(process.env.TALLY_HELPER_DATA_DIR);
-const PRODUCTION_RENDERER_CANDIDATES = [
-  path.join(APP_PATH, "client", "dist", "index.html"),
-  path.join(APP_PATH, "renderer", "index.html"),
-  path.resolve(__dirname, "..", "client", "dist", "index.html"),
-  path.resolve(__dirname, "renderer", "index.html"),
-];
+// DATA_DIR will be set after fileService is loaded
+let DATA_DIR;
+// Get renderer candidates - check both inside asar and in resources
+const getRendererCandidates = () => {
+  const candidates = [];
+  
+  if (app.isPackaged) {
+    const appPath = app.getAppPath();
+
+    if (appPath.endsWith(".asar")) {
+      const insideAsar = path.join(appPath, "app", "client", "dist", "index.html");
+      candidates.push(insideAsar);
+
+      const unpacked = appPath + ".unpacked";
+      const unpackedHtml = path.join(unpacked, "app", "client", "dist", "index.html");
+      candidates.push(unpackedHtml);
+
+      const resourcesDir = path.dirname(appPath);
+      const extraResourcesHtml = path.join(resourcesDir, "backend", "client", "dist", "index.html");
+      candidates.push(extraResourcesHtml);
+    }
+  } else {
+    candidates.push(path.resolve(__dirname, "client", "dist", "index.html"));
+  }
+
+  return candidates;
+};
+
+const PRODUCTION_RENDERER_CANDIDATES = getRendererCandidates();
 
 let mainWindow = null;
 let backendProcess = null;
@@ -65,7 +127,7 @@ const startFrontendDevServer = () => {
     return frontendProcess;
   }
 
-  const clientDir = path.resolve(__dirname, "..", "client");
+  const clientDir = path.resolve(__dirname, "..", "..", "client");
   const viteBin = path.resolve(
     clientDir,
     "node_modules",
@@ -157,8 +219,26 @@ const waitForDevServer = async (attempts = 40, delayMs = 250) => {
   return false;
 };
 
-const findProductionRenderer = () =>
-  PRODUCTION_RENDERER_CANDIDATES.find((candidate) => fs.existsSync(candidate));
+const findProductionRenderer = () => {
+  const candidates = getRendererCandidates();
+  // Electron's loadFile() can load from asar, so we just return the first likely candidate
+  // The most common location is app.asar/client/dist/index.html
+  for (const candidate of candidates) {
+    console.log("[renderer] Candidate:", candidate);
+    // For asar files, we can't reliably check existence, so we'll try to load it
+    // Return the first candidate that looks reasonable (inside app.asar)
+    if (candidate.includes("app.asar") || candidate.includes("client/dist")) {
+      console.log("[renderer] Using:", candidate);
+      return candidate;
+    }
+  }
+  // Fallback: return first candidate anyway, let loadFile() handle the error
+  if (candidates.length > 0) {
+    console.log("[renderer] Using first candidate:", candidates[0]);
+    return candidates[0];
+  }
+  return null;
+};
 
 const resolveRendererTarget = async () => {
   const devServerAvailable = await waitForDevServer();
@@ -185,7 +265,13 @@ const loadRenderer = async (windowInstance) => {
   if (target.type === "url") {
     await windowInstance.loadURL(target.value);
   } else {
-    await windowInstance.loadFile(target.value);
+    try {
+      // loadFile can load from asar archives, so just try it
+      await windowInstance.loadFile(target.value);
+    } catch (error) {
+      console.error("[renderer] Failed to load file:", target.value, error);
+      throw new Error(`Failed to load renderer from ${target.value}: ${error.message}`);
+    }
   }
 };
 
@@ -209,7 +295,6 @@ const createMainWindow = async () => {
       sandbox: false,
     },
   });
-
   mainWindow.on("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => {
     mainWindow = null;
@@ -255,25 +340,39 @@ const startBackend = () => {
     return backendProcess;
   }
 
-  // In packaged apps with asar, backend is unpacked to app.asar.unpacked
-  // Try unpacked location first, then fall back to app path
+  // Backend is now inside electron/backend, so paths are simpler
   let backendEntry;
-  if (app.isPackaged && APP_PATH.endsWith(".asar")) {
-    // Backend is unpacked to app.asar.unpacked/backend/server.js
-    const unpackedPath = APP_PATH.replace(".asar", ".asar.unpacked");
-    const unpackedBackend = path.join(unpackedPath, "backend", "server.js");
-    console.log("[backend] Checking unpacked location:", unpackedBackend);
-    if (fs.existsSync(unpackedBackend)) {
-      backendEntry = unpackedBackend;
-      console.log("[backend] Using unpacked backend:", backendEntry);
+  
+  if (app.isPackaged) {
+    // In packaged app, backend is in extraResources (resources/backend)
+    const resourcesDir = path.dirname(APP_PATH); // resources/ folder
+    const extraResourcesBackend = path.join(resourcesDir, "backend", "server.js");
+    console.log("[backend] Checking extraResources:", extraResourcesBackend);
+    
+    if (fs.existsSync(extraResourcesBackend)) {
+      backendEntry = extraResourcesBackend;
+      console.log("[backend] ✓ Found in extraResources");
     } else {
-      backendEntry = path.join(APP_PATH, "backend", "server.js");
-      console.log("[backend] Unpacked not found, trying asar:", backendEntry);
+      // Fallback: try app.asar.unpacked/app/backend
+      if (APP_PATH.endsWith(".asar")) {
+        const unpackedPath = APP_PATH.replace(".asar", ".asar.unpacked");
+        const unpackedBackend = path.join(unpackedPath, "app", "backend", "server.js");
+        console.log("[backend] Checking unpacked:", unpackedBackend);
+        if (fs.existsSync(unpackedBackend)) {
+          backendEntry = unpackedBackend;
+          console.log("[backend] ✓ Found in app.asar.unpacked");
+        } else {
+          backendEntry = extraResourcesBackend; // Use this for error message
+          console.log("[backend] ✗ Not found");
+        }
+      } else {
+        backendEntry = path.join(APP_PATH, "app", "backend", "server.js");
+      }
     }
   } else {
-    // Development or non-asar build
-    backendEntry = path.join(APP_PATH, "backend", "server.js");
-    console.log("[backend] Using app path backend:", backendEntry);
+    // Development mode - backend is at app/backend/server.js (same folder as main.js)
+    backendEntry = path.join(__dirname, "backend", "server.js");
+    console.log("[backend] Development mode:", backendEntry);
   }
 
   const backendCwd = path.dirname(backendEntry);
@@ -292,27 +391,94 @@ const startBackend = () => {
   }
   
   console.log("[backend] Starting backend from:", backendEntry);
-  
+
   // Use Electron executable as Node.js with ELECTRON_RUN_AS_NODE flag
   const nodeBinary = process.execPath;
 
+  // Set NODE_PATH to find node_modules
+  // Backend is now in electron/backend, so check backend/node_modules first
+  let nodePath = [];
+  
+  // First priority: backend's own node_modules (electron/backend/node_modules)
+  const backendNodeModules = path.join(backendCwd, "node_modules");
+  console.log("[backend] Checking backend node_modules:", backendNodeModules);
+  if (fs.existsSync(backendNodeModules)) {
+    nodePath.push(backendNodeModules);
+    console.log("[backend] ✓ Found backend node_modules");
+  }
+  
+  if (app.isPackaged) {
+    const resourcesDir = path.dirname(APP_PATH);
+    
+    if (APP_PATH.endsWith(".asar")) {
+      // Second priority: electron's node_modules unpacked
+      const unpackedNodeModules = path.join(resourcesDir, "app.asar.unpacked", "node_modules");
+      console.log("[backend] Checking unpacked node_modules:", unpackedNodeModules);
+      if (fs.existsSync(unpackedNodeModules)) {
+        nodePath.push(unpackedNodeModules);
+        console.log("[backend] ✓ Found unpacked node_modules");
+      }
+    }
+  } else {
+    // Development: also check electron's node_modules as fallback (at ../node_modules from app/)
+    const electronNodeModules = path.join(__dirname, "..", "node_modules");
+    if (fs.existsSync(electronNodeModules)) {
+      nodePath.push(electronNodeModules);
+      console.log("[backend] Also checking electron node_modules:", electronNodeModules);
+    }
+  }
+
+  const env = {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: "1",
+    PORT: BACKEND_PORT,
+    TALLY_HELPER_DATA_DIR: DATA_DIR,
+    NODE_ENV: "production",
+  };
+
+  if (nodePath.length > 0) {
+    // Ensure all paths are absolute and normalized
+    const absoluteNodePaths = nodePath.map(p => path.resolve(p));
+    const existingNodePath = process.env.NODE_PATH ? process.env.NODE_PATH.split(path.delimiter) : [];
+    env.NODE_PATH = [...absoluteNodePaths, ...existingNodePath].join(path.delimiter);
+    console.log("[backend] NODE_PATH set to:", env.NODE_PATH);
+    console.log("[backend] NODE_PATH entries (absolute):", absoluteNodePaths);
+    
+    // Verify express exists in the first node_modules path
+    if (absoluteNodePaths.length > 0) {
+      const expressPath = path.join(absoluteNodePaths[0], "express");
+      const expressExists = fs.existsSync(expressPath);
+      console.log("[backend] Express check:", expressPath, expressExists ? "✓ EXISTS" : "✗ NOT FOUND");
+    }
+  } else {
+    console.error("[backend] ⚠️ WARNING: No node_modules found! Backend will fail to start.");
+    console.error("[backend] Checked paths:");
+    if (app.isPackaged) {
+      const resourcesDir = path.dirname(APP_PATH);
+      console.error("  -", path.join(resourcesDir, "app.asar.unpacked", "node_modules"));
+      console.error("  -", path.join(APP_PATH, "node_modules"));
+      console.error("  -", path.join(resourcesDir, "node_modules"));
+    } else {
+      console.error("  -", path.join(__dirname, "node_modules"));
+    }
+  }
+
   backendProcess = spawn(nodeBinary, [backendEntry], {
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: "1",
-      PORT: BACKEND_PORT,
-      TALLY_HELPER_DATA_DIR: DATA_DIR,
-      NODE_ENV: "production",
-    },
+    env,
     cwd: backendCwd,
     stdio: "pipe",
   });
 
+  // Collect all backend output for error reporting
+  let backendOutput = { stdout: [], stderr: [] };
+  
   const logStream = (stream, prefix) => {
     if (!stream) return;
     stream.on("data", (chunk) => {
       const message = chunk.toString().trim();
       if (message) {
+        const outputArray = prefix === "stderr" ? backendOutput.stderr : backendOutput.stdout;
+        outputArray.push(message);
         console[prefix === "stderr" ? "error" : "log"](
           `[backend:${prefix}]`,
           message,
@@ -321,19 +487,20 @@ const startBackend = () => {
     });
   };
 
-  if (isDevLike) {
-    logStream(backendProcess.stdout, "stdout");
-    logStream(backendProcess.stderr, "stderr");
-  } else {
-    backendProcess.stdout?.resume();
-    backendProcess.stderr?.resume();
-  }
+  // Always log backend output to help debug issues
+  logStream(backendProcess.stdout, "stdout");
+  logStream(backendProcess.stderr, "stderr");
 
   backendProcess.once("error", (error) => {
     console.error("Backend failed to start:", error);
+    console.error("[backend] Backend entry:", backendEntry);
+    console.error("[backend] Backend cwd:", backendCwd);
+    console.error("[backend] Node binary:", nodeBinary);
+    console.error("[backend] NODE_PATH:", env.NODE_PATH);
+    
     dialog.showErrorBox(
       "Backend Startup Error",
-      `The backend server could not be started.\n${error.message}`,
+      `The backend server could not be started.\n\nError: ${error.message}\n\nBackend: ${backendEntry}\nCWD: ${backendCwd}\nNODE_PATH: ${env.NODE_PATH || "not set"}`,
     );
   });
 
@@ -341,13 +508,27 @@ const startBackend = () => {
     console.warn(
       `Backend exited (code: ${code ?? "unknown"}, signal: ${signal ?? "n/a"})`,
     );
-    backendProcess = null;
-    if (!isQuitting) {
+    
+    // Show detailed error if backend crashed
+    if (!isQuitting && code !== 0) {
+      const errorDetails = [
+        `Exit code: ${code ?? "unknown"}`,
+        `Signal: ${signal ?? "n/a"}`,
+        "",
+        "Backend output:",
+        ...backendOutput.stdout.slice(-10), // Last 10 stdout lines
+        ...backendOutput.stderr.slice(-10), // Last 10 stderr lines
+      ].join("\n");
+      
+      console.error("[backend] Error details:", errorDetails);
+      
       dialog.showErrorBox(
         "Backend Exited Unexpectedly",
-        "The backend server stopped running. Restart the app to recover.",
+        `The backend server stopped running.\n\n${errorDetails}\n\nRestart the app to recover.`,
       );
     }
+    
+    backendProcess = null;
   });
 
   return backendProcess;
@@ -584,10 +765,32 @@ const initAutoUpdater = () => {
 };
 
 const bootstrap = async () => {
-  const dataDir = await ensurePreferredDataDir();
-  setBaseDir(dataDir);
-  process.env.TALLY_HELPER_DATA_DIR = dataDir;
+  // Load fileService.js first
+  const fileServiceModule = await loadFileService();
+  getBaseDir = fileServiceModule.getBaseDir;
+  ensurePreferredDataDir = fileServiceModule.ensurePreferredDataDir;
+  setBaseDir = fileServiceModule.setBaseDir;
+
+  // Ensure DATA_DIR points to fixed storage folder in production
+  try {
+    DATA_DIR = await ensurePreferredDataDir(); // Creates folder if missing
+    setBaseDir(DATA_DIR);
+    process.env.TALLY_HELPER_DATA_DIR = DATA_DIR;
+    console.log("[main] DATA_DIR set to:", DATA_DIR);
+  } catch (error) {
+    console.error("[main] Failed to set DATA_DIR:", error);
+    dialog.showErrorBox(
+      "Initialization Error",
+      `Failed to initialize application data folder.\n\n${error.message}`
+    );
+    app.quit();
+    return;
+  }
+
+  // Register IPC handlers
   registerIpcHandlers();
+
+  // Start backend process
   startBackend();
   try {
     await waitForBackend();
@@ -595,18 +798,24 @@ const bootstrap = async () => {
     console.error("Backend health check failed:", error);
     dialog.showErrorBox(
       "Backend Not Reachable",
-      `The backend did not respond at ${BACKEND_HEALTHCHECK}.`,
+      `The backend did not respond at ${BACKEND_HEALTHCHECK}.\n\n${error.message}`
     );
   }
+
+  // Create main window
   await createMainWindow();
+
+  // Initialize auto-updater
   initAutoUpdater();
 
+  // macOS behavior: re-create window when app icon is clicked
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       void createMainWindow();
     }
   });
 };
+
 
 app.whenReady().then(bootstrap);
 

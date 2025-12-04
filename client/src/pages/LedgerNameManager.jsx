@@ -17,8 +17,12 @@ import {
   updateLedgerName,
 } from "../services/ledgernameservice.js";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
+import PlanRestrictionBanner from "../components/PlanRestrictionBanner.jsx";
+import { getPlanRestrictionMessage } from "../utils/planAccess.js";
 
 const LedgerNameManager = () => {
+  const { user, isPlanRestricted } = useAuth();
   const [ledgerNames, setLedgerNames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -32,6 +36,11 @@ const LedgerNameManager = () => {
     targetId: null,
     targetName: "",
   });
+
+  const readOnly = !user?.isMaster && isPlanRestricted;
+  const readOnlyMessage = readOnly
+    ? getPlanRestrictionMessage(user?.planStatus)
+    : "";
 
   const loadLedgerNames = async () => {
     setLoading(true);
@@ -68,6 +77,10 @@ const LedgerNameManager = () => {
 
   const handleAddLedger = async (event) => {
     event.preventDefault();
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     const trimmed = newName.trim();
     if (!trimmed) {
       setStatus({ type: "error", message: "Ledger name cannot be empty." });
@@ -93,6 +106,10 @@ const LedgerNameManager = () => {
   };
 
   const handleDeleteLedger = async (id, name) => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     setSubmitting(true);
     try {
       await deleteLedgerName(id);
@@ -112,6 +129,10 @@ const LedgerNameManager = () => {
   };
 
   const startEditing = (entry) => {
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     setEditingId(entry._id);
     setEditingValue(entry.name);
   };
@@ -123,6 +144,10 @@ const LedgerNameManager = () => {
 
   const handleUpdateLedger = async (event) => {
     event.preventDefault();
+    if (readOnly) {
+      setStatus({ type: "error", message: readOnlyMessage });
+      return;
+    }
     const trimmed = editingValue.trim();
     if (!trimmed) {
       setStatus({ type: "error", message: "Ledger name cannot be empty." });
@@ -177,6 +202,8 @@ const LedgerNameManager = () => {
           </p>
         </motion.header>
 
+        <PlanRestrictionBanner />
+
         {status.message ? (
           <div
             className={`rounded-2xl border px-4 py-3 text-sm shadow ${
@@ -212,13 +239,13 @@ const LedgerNameManager = () => {
                 }
                 className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
                 placeholder="Enter ledger name"
-                disabled={submitting}
+                disabled={submitting || readOnly}
               />
             </label>
             <div className="flex gap-2">
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || readOnly}
                 className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
               >
                 {editingId ? <FiSave /> : <FiPlus />}
@@ -309,8 +336,8 @@ const LedgerNameManager = () => {
                           <button
                             type="button"
                             onClick={() => startEditing(entry)}
-                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                            disabled={submitting && editingId !== entry._id}
+                          className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                            disabled={submitting || readOnly}
                           >
                             <FiEdit2 />
                             Edit
@@ -324,8 +351,8 @@ const LedgerNameManager = () => {
                                 targetName: entry.name,
                               })
                             }
-                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                            disabled={submitting}
+                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                            disabled={submitting || readOnly}
                           >
                             <FiTrash2 />
                             Delete
@@ -352,7 +379,7 @@ const LedgerNameManager = () => {
         onConfirm={() => {
           const { targetId, targetName } = confirmState;
           setConfirmState({ open: false, targetId: null, targetName: "" });
-          if (targetId) {
+          if (targetId && !readOnly) {
             handleDeleteLedger(targetId, targetName);
           }
         }}

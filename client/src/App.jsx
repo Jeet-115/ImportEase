@@ -1,6 +1,6 @@
 
 
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home.jsx";
 import Companymasters from "./pages/Companymasters.jsx";
 import Companyselector from "./pages/Companyselector.jsx";
@@ -35,7 +35,7 @@ const AppShell = () => {
   return (
     <>
       <MasterBadge />
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/company-masters" element={<Companymasters />} />
@@ -49,7 +49,7 @@ const AppShell = () => {
           <Route path="/ledger-names" element={<LedgerNameManager />} />
           <Route path="/party-masters" element={<PartyMasterManager />} />
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </>
   );
 };

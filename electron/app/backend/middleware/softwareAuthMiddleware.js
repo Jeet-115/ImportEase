@@ -1,4 +1,9 @@
 import { User } from "../models/User.js";
+import {
+  determinePlanStatus,
+  getPlanRestrictionMessage,
+  isPlanRestricted,
+} from "../utils/subscriptionStatus.js";
 
 const getMasterEmails = () =>
   (process.env.MASTER_ACCOUNTS || "")
@@ -30,6 +35,17 @@ export const softwareAuthGuard = async (req, res, next) => {
     const isMaster =
       user.isMaster || masterEmails.includes(user.email.toLowerCase());
 
+    let planStatus = determinePlanStatus({
+      isMaster,
+      subscriptionActive: user.subscriptionActive,
+      subscriptionExpiry: user.subscriptionExpiry,
+    });
+    const planLimited = isPlanRestricted({
+      isMaster,
+      subscriptionActive: user.subscriptionActive,
+      subscriptionExpiry: user.subscriptionExpiry,
+    });
+
     if (!isMaster) {
       if (user.deviceId) {
         if (!headerDeviceId || headerDeviceId !== user.deviceId) {
@@ -39,23 +55,14 @@ export const softwareAuthGuard = async (req, res, next) => {
           });
         }
       }
-
-      if (
-        user.subscriptionActive === false ||
-        (user.subscriptionExpiry &&
-          new Date(user.subscriptionExpiry).getTime() < Date.now())
-      ) {
-        return res.status(403).json({
-          success: false,
-          message: "Subscription expired or inactive.",
-        });
-      }
     }
 
     req.softwareUser = {
       id: user._id.toString(),
       email: user.email,
       isMaster,
+      planStatus,
+      isPlanRestricted: planLimited,
     };
 
     next();
@@ -66,6 +73,27 @@ export const softwareAuthGuard = async (req, res, next) => {
       message: "Internal authentication error.",
     });
   }
+};
+
+export const requireActiveSubscription = (req, res, next) => {
+  if (!req?.softwareUser) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required.",
+    });
+  }
+
+  if (req.softwareUser.isMaster || !req.softwareUser.isPlanRestricted) {
+    return next();
+  }
+
+  const planStatus = req.softwareUser.planStatus;
+
+  return res.status(403).json({
+    success: false,
+    message: getPlanRestrictionMessage(planStatus),
+    planStatus: planStatus || "inactive",
+  });
 };
 
 

@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import {
   ensureDataDir as ensureElectronDataDir,
   getFullPath as electronGetFullPath,
-} from "../../electron/fileService.js";
+} from "../../fileService.js";
 
 const DATA_DIR =
   process.env.TALLY_HELPER_DATA_DIR ||

@@ -6,16 +6,20 @@ import {
   updateCompanyMaster,
   deleteCompanyMaster,
 } from "../controllers/companymastercontroller.js";
+import { requireActiveSubscription } from "../middleware/softwareAuthMiddleware.js";
 
 const router = Router();
 
-router.route("/").get(getCompanyMasters).post(createCompanyMaster);
+router
+  .route("/")
+  .get(getCompanyMasters)
+  .post(requireActiveSubscription, createCompanyMaster);
 
 router
   .route("/:id")
   .get(getCompanyMasterById)
-  .put(updateCompanyMaster)
-  .delete(deleteCompanyMaster);
+  .put(requireActiveSubscription, updateCompanyMaster)
+  .delete(requireActiveSubscription, deleteCompanyMaster);
 
 export default router;
 

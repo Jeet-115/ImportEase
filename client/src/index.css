@@ -139,6 +139,24 @@
     0 0 0 1px rgba(134, 239, 172, 0.5);
 }
 
+.master-badge--standard {
+  background: radial-gradient(circle at top left, #6366f1, #312e81);
+  box-shadow:
+    0 10px 30px rgba(79, 70, 229, 0.5),
+    0 0 0 1px rgba(165, 180, 252, 0.5);
+}
+
+.master-badge--restricted {
+  background: radial-gradient(circle at top left, #f97316, #7c2d12);
+  box-shadow:
+    0 10px 30px rgba(249, 115, 22, 0.4),
+    0 0 0 1px rgba(254, 215, 170, 0.5);
+}
+
+.master-badge--master {
+  background: radial-gradient(circle at top left, #22c55e, #14532d);
+}
+
 .master-badge-label {
   font-size: 11px;
   text-transform: uppercase;
@@ -150,6 +168,20 @@
 .master-badge-email {
   font-size: 11px;
   color: #dcfce7;
+}
+
+.master-badge-status {
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .master-badge-logout {
@@ -173,4 +205,5 @@
   transform: translateY(-0.5px);
   box-shadow: 0 0 0 1px rgba(226, 232, 240, 0.4);
 }
+
 

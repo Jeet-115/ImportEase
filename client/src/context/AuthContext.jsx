@@ -1,7 +1,21 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { getAuthData, setAuthData, clearAuthData } from "../utils/authStorage.js";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import {
+  getAuthData,
+  setAuthData,
+  clearAuthData,
+} from "../utils/authStorage.js";
 import { getDeviceId } from "../utils/device.js";
 import { loginSoftware } from "../services/authService.js";
+import {
+  computePlanState,
+  PLAN_STATUS,
+} from "../utils/planAccess.js";
 
 const AuthContext = createContext(null);
 
@@ -24,23 +38,12 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        const isMaster = !!stored.isMaster;
-        const expiry = stored.subscriptionExpiry
-          ? new Date(stored.subscriptionExpiry)
-          : null;
-
-        if (!isMaster && expiry && expiry.getTime() <= Date.now()) {
-          if (!cancelled) {
-            setUser(null);
-            setLocked(true);
-            setLockReason("Your subscription has expired. Renew to continue.");
-            await clearAuthData();
-          }
-          return;
-        }
-
         if (!cancelled) {
-          setUser(stored);
+          const enhanced = {
+            ...stored,
+            ...computePlanState(stored),
+          };
+          setUser(enhanced);
         }
       } finally {
         if (!cancelled) {
@@ -58,17 +61,21 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     if (!user || user.isMaster) return;
-    if (!user.subscriptionExpiry) return;
 
-    const intervalId = setInterval(async () => {
-      const expiry = new Date(user.subscriptionExpiry);
-      if (Date.now() > expiry.getTime()) {
-        setUser(null);
-        setLocked(true);
-        setLockReason("Your subscription has expired. Renew to continue.");
-        await clearAuthData();
-        clearInterval(intervalId);
-      }
+    const intervalId = setInterval(() => {
+      setUser((current) => {
+        if (!current || current.isMaster) return current;
+        const planState = computePlanState(current);
+        if (
+          planState.planStatus === current.planStatus &&
+          planState.isPlanRestricted === current.isPlanRestricted
+        ) {
+          return current;
+        }
+        const next = { ...current, ...planState };
+        setAuthData(next);
+        return next;
+      });
     }, 30_000);
 
     return () => clearInterval(intervalId);
@@ -91,12 +98,20 @@ export const AuthProvider = ({ children }) => {
       throw new Error("This account is locked to another device.");
     }
 
-    const authPayload = {
+    const basePayload = {
       email,
       softwareToken: result.softwareToken,
       isMaster: !!result.isMaster,
       subscriptionExpiry: result.subscriptionExpiry,
+      subscriptionActive:
+        result.subscriptionActive === false ? false : true,
       deviceId: result.deviceId || deviceId || null,
+    };
+
+    const planState = computePlanState(basePayload);
+    const authPayload = {
+      ...basePayload,
+      ...planState,
     };
 
     setUser(authPayload);
@@ -119,6 +134,8 @@ export const AuthProvider = ({ children }) => {
         lockReason,
         login,
         logout,
+        planStatus: user?.planStatus || PLAN_STATUS.ACTIVE,
+        isPlanRestricted: !!user?.isPlanRestricted && !user?.isMaster,
       }}
     >
       {children}
