@@ -86,17 +86,26 @@ export const AuthProvider = ({ children }) => {
     setLockReason("");
 
     const deviceId = await getDeviceId();
-    const result = await loginSoftware({ email, password, deviceId });
+    try {
+      const result = await loginSoftware({ email, password, deviceId });
 
-    if (!result?.success) {
-      throw new Error(result?.message || "Invalid email or password");
-    }
+      if (!result?.success) {
+        // Check if it's a device mismatch error
+        if (result?.errorCode === "DEVICE_MISMATCH" || result?.message?.includes("another system") || result?.message?.includes("another device")) {
+          const errorMsg = "The account is already connected with another system. You can't login on 2 systems with the same account.";
+          setLocked(true);
+          setLockReason(errorMsg);
+          throw new Error(errorMsg);
+        }
+        throw new Error("Email and password don't match");
+      }
 
-    if (!result.isMaster && result.deviceId && deviceId && result.deviceId !== deviceId) {
-      setLocked(true);
-      setLockReason("This account is locked to another device.");
-      throw new Error("This account is locked to another device.");
-    }
+      if (!result.isMaster && result.deviceId && deviceId && result.deviceId !== deviceId) {
+        const errorMsg = "The account is already connected with another system. You can't login on 2 systems with the same account.";
+        setLocked(true);
+        setLockReason(errorMsg);
+        throw new Error(errorMsg);
+      }
 
     const basePayload = {
       email,
@@ -108,15 +117,19 @@ export const AuthProvider = ({ children }) => {
       deviceId: result.deviceId || deviceId || null,
     };
 
-    const planState = computePlanState(basePayload);
-    const authPayload = {
-      ...basePayload,
-      ...planState,
-    };
+      const planState = computePlanState(basePayload);
+      const authPayload = {
+        ...basePayload,
+        ...planState,
+      };
 
-    setUser(authPayload);
-    await setAuthData(authPayload);
-  }, []);
+      setUser(authPayload);
+      await setAuthData(authPayload);
+    } catch (error) {
+      // Re-throw the error so LoginScreen can handle it
+      throw error;
+    }
+    }, []);
 
   const logout = useCallback(async () => {
     setUser(null);

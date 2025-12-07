@@ -57,7 +57,8 @@ export const loginSoftware = async (req, res) => {
       } else if (deviceId && user.deviceId !== deviceId) {
         return res.status(403).json({
           success: false,
-          message: "This account is locked to another device.",
+          message: "This account is already connected with another system. You can't login on 2 systems with the same account.",
+          errorCode: "DEVICE_MISMATCH",
         });
       }
     } else {
