@@ -22,8 +22,6 @@ dotenv.config({
   path: path.join(__dirname, ".env.production"),
 });
 const app = express();
-console.log("ENV Loaded From:", path.join(__dirname, ".env.production"));
-console.log("MONGO_URI =", process.env.MONGO_URI);
 
 // Middleware
 const allowedOrigins = [
@@ -76,7 +74,7 @@ const bootstrap = async () => {
   await ensureGSTINSeeded();
   await ensureLedgerNamesSeeded();
 
-  const PORT = process.env.PORT || 5000;
+  const PORT = 5000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 };
 
