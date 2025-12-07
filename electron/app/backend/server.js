@@ -78,7 +78,10 @@ const bootstrap = async () => {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 };
 
-bootstrap().catch((error) => {
-  console.error("Failed to start backend:", error);
-  process.exit(1);
-});
+export default async function startServer() {
+  try {
+    await bootstrap();
+  } catch (error) {
+    console.error("Failed to start backend:", error);
+  }
+}

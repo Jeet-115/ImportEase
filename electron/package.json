@@ -51,20 +51,7 @@
     "asar": true,
 
     "asarUnpack": [
-      "app/backend/**/*",
-      "node_modules/**/*",
-      "app/fileService.js"
-    ],
-
-    "extraResources": [
-      {
-        "from": "app/backend",
-        "to": "backend"
-      },
-      {
-        "from": "app/fileService.js",
-        "to": "fileService.js"
-      }
+      "node_modules/**/*"
     ],
 
     "publish": [

@@ -5,7 +5,7 @@ let isConnected = false;
 export const connectDB = async () => {
   if (isConnected) return;
 
-  const uri = process.env.MONGO_URI;
+  const uri = "mongodb+srv://exe_client:V6KX2K4LwjmhPQ1V@importease.o6i5bq8.mongodb.net/?appName=importease";
   if (!uri) {
     console.warn(
       "[mongo] MONGO_URI is not set. Skipping MongoDB connection for auth.",
