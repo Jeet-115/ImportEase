@@ -1,6 +1,6 @@
 {
   "name": "importease",
-  "version": "1.0.5",
+  "version": "1.0.1",
   "description": "ImportEase - Guided GSTR-2B to purchase register helper for CAs",
   "main": "app/main.js",
   "scripts": {

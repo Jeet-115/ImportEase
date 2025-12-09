@@ -29,8 +29,8 @@ const loadFileService = async () => {
 };
 
 
-const baseEnvIsDev = process.env.NODE_ENV !== "production";
-const isDevLike = baseEnvIsDev || !app.isPackaged;
+const baseEnvIsDev = !app.isPackaged;
+const isDevLike = !app.isPackaged;
 
 // Get app path - in packaged apps, this points to resources/app.asar/app or resources/app/app
 const getAppPath = () => {
@@ -75,6 +75,7 @@ const updaterState = {
   currentVersion: app.getVersion(),
   latestVersion: null,
   status: "Idle",
+  lastError: null,
 };
 
 const buildMenuTemplate = () => {
@@ -94,7 +95,36 @@ const buildMenuTemplate = () => {
       label: `Status: ${updaterState.status}`,
       enabled: false,
     },
-  ];
+    updaterState.lastError
+      ? {
+          label: `Last error: ${updaterState.lastError}`,
+          enabled: false,
+        }
+      : null,
+    { type: "separator" },
+    {
+      label: "Check for updates now",
+      click: () => {
+        console.log("[updater] Manual check triggered");
+        updaterState.status = "Checking for updates…";
+        updaterState.lastError = null;
+        refreshAppMenu();
+        autoUpdater
+          .checkForUpdates()
+          .then(() => {
+            console.log("[updater] Manual check initiated");
+            updaterState.status = "Checking for updates…";
+            refreshAppMenu();
+          })
+          .catch((error) => {
+            console.error("[updater] Manual check failed:", error);
+            updaterState.status = "Update check failed";
+            updaterState.lastError = error?.message ?? "Unknown error";
+            refreshAppMenu();
+          });
+      },
+    },
+  ].filter(Boolean);
 
   return [
     {
@@ -592,6 +622,14 @@ const initAutoUpdater = () => {
   autoUpdater.on("error", (error) => {
     console.error("[updater] Error:", error);
     updaterState.status = `Error: ${error?.message ?? "Update failed"}`;
+    updaterState.lastError = error?.message ?? "Update failed";
+    refreshAppMenu();
+  });
+
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[updater] Checking for updates…");
+    updaterState.status = "Checking for updates…";
+    updaterState.lastError = null;
     refreshAppMenu();
   });
 
@@ -599,6 +637,7 @@ const initAutoUpdater = () => {
     console.log("[updater] Update available:", info?.version ?? "unknown version");
     updaterState.latestVersion = info?.version ?? null;
     updaterState.status = "Update available – downloading";
+    updaterState.lastError = null;
     refreshAppMenu();
   });
 
@@ -606,6 +645,20 @@ const initAutoUpdater = () => {
     console.log("[updater] No updates available.");
     updaterState.latestVersion = updaterState.currentVersion;
     updaterState.status = "Up to date";
+    updaterState.lastError = null;
+    refreshAppMenu();
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const percent = progress?.percent
+      ? progress.percent.toFixed(1)
+      : "0";
+    console.log(
+      "[updater] Download progress:",
+      `${percent}%`,
+      `${progress?.transferred ?? 0}/${progress?.total ?? "?"} bytes`,
+    );
+    updaterState.status = `Downloading… ${percent}%`;
     refreshAppMenu();
   });
 
@@ -613,6 +666,7 @@ const initAutoUpdater = () => {
     try {
       updaterState.latestVersion = releaseName || updaterState.latestVersion;
       updaterState.status = "Ready to install";
+      updaterState.lastError = null;
       refreshAppMenu();
       if (!mainWindow) return;
       const { response } = await dialog.showMessageBox(mainWindow, {
@@ -634,12 +688,15 @@ const initAutoUpdater = () => {
       }
     } catch (error) {
       console.error("[updater] Failed to prompt for update:", error);
+      updaterState.lastError = error?.message ?? "Failed to prompt for update";
+      refreshAppMenu();
     }
   });
 
   // Check for updates a few seconds after startup to allow network to come up.
   setTimeout(() => {
     updaterState.status = "Checking for updates…";
+    updaterState.lastError = null;
     refreshAppMenu();
     autoUpdater
       .checkForUpdates()
@@ -651,6 +708,7 @@ const initAutoUpdater = () => {
       .catch((error) => {
         console.error("[updater] Failed to check for updates:", error);
         updaterState.status = "Update check failed";
+        updaterState.lastError = error?.message ?? "Update check failed";
         refreshAppMenu();
       });
   }, 8000);
