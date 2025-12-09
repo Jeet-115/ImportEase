@@ -35,7 +35,7 @@
   "build": {
     "appId": "com.jeet115.importease",
     "productName": "ImportEase",
-    "artifactName": "ImportEase Setup ${version}.${ext}",
+    "artifactName": "ImportEase-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
