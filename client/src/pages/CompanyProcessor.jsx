@@ -2519,6 +2519,12 @@ const CompanyProcessor = () => {
                       })}
                     </div>
 
+                    <div className="flex flex-col gap-2 text-xs text-amber-700">
+                      <p className="font-semibold">
+                        Please download the Excel before saving to Party Master if you need a copy. After saving, this list will no longer be downloadable.
+                      </p>
+                    </div>
+
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
