@@ -1,6 +1,6 @@
 {
   "name": "importease",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "ImportEase - Guided GSTR-2B to purchase register helper for CAs",
   "main": "app/main.js",
   "scripts": {
@@ -35,6 +35,7 @@
   "build": {
     "appId": "com.jeet115.importease",
     "productName": "ImportEase",
+    "artifactName": "ImportEase Setup ${version}.${ext}",
     "directories": {
       "output": "dist"
     },

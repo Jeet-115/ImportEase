@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu } from "electron";
 import updaterPkg from "electron-updater";
 const { autoUpdater } = updaterPkg;
 import fs from "node:fs";
@@ -71,6 +71,76 @@ let frontendProcess = null;
 let isQuitting = false;
 let ipcHandlersRegistered = false;
 let autoUpdateInitialized = false;
+const updaterState = {
+  currentVersion: app.getVersion(),
+  latestVersion: null,
+  status: "Idle",
+};
+
+const buildMenuTemplate = () => {
+  const helpItems = [
+    {
+      label: `Current version: ${updaterState.currentVersion}`,
+      enabled: false,
+    },
+    {
+      label: `Latest available: ${
+        updaterState.latestVersion || "Not checked yet"
+      }`,
+      enabled: false,
+    },
+    { type: "separator" },
+    {
+      label: `Status: ${updaterState.status}`,
+      enabled: false,
+    },
+  ];
+
+  return [
+    {
+      label: "File",
+      submenu: [{ role: "quit" }],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    {
+      label: "Window",
+      submenu: [{ role: "minimize" }, { role: "close" }],
+    },
+    {
+      label: "Help",
+      submenu: helpItems,
+    },
+  ];
+};
+
+const refreshAppMenu = () => {
+  const menu = Menu.buildFromTemplate(buildMenuTemplate());
+  Menu.setApplicationMenu(menu);
+};
 
 const getDevServerPort = () => {
   try {
@@ -521,18 +591,29 @@ const initAutoUpdater = () => {
 
   autoUpdater.on("error", (error) => {
     console.error("[updater] Error:", error);
+    updaterState.status = `Error: ${error?.message ?? "Update failed"}`;
+    refreshAppMenu();
   });
 
   autoUpdater.on("update-available", (info) => {
     console.log("[updater] Update available:", info?.version ?? "unknown version");
+    updaterState.latestVersion = info?.version ?? null;
+    updaterState.status = "Update available – downloading";
+    refreshAppMenu();
   });
 
   autoUpdater.on("update-not-available", () => {
     console.log("[updater] No updates available.");
+    updaterState.latestVersion = updaterState.currentVersion;
+    updaterState.status = "Up to date";
+    refreshAppMenu();
   });
 
   autoUpdater.on("update-downloaded", async (_event, _notes, releaseName) => {
     try {
+      updaterState.latestVersion = releaseName || updaterState.latestVersion;
+      updaterState.status = "Ready to install";
+      refreshAppMenu();
       if (!mainWindow) return;
       const { response } = await dialog.showMessageBox(mainWindow, {
         type: "question",
@@ -558,18 +639,27 @@ const initAutoUpdater = () => {
 
   // Check for updates a few seconds after startup to allow network to come up.
   setTimeout(() => {
+    updaterState.status = "Checking for updates…";
+    refreshAppMenu();
     autoUpdater
       .checkForUpdates()
       .then(() => {
         console.log("[updater] Update check initiated.");
+        updaterState.status = "Checking for updates…";
+        refreshAppMenu();
       })
       .catch((error) => {
         console.error("[updater] Failed to check for updates:", error);
+        updaterState.status = "Update check failed";
+        refreshAppMenu();
       });
   }, 8000);
 };
 
 const bootstrap = async () => {
+  // Set initial menu
+  refreshAppMenu();
+
   // Load fileService.js first
   const fileServiceModule = await loadFileService();
   getBaseDir = fileServiceModule.getBaseDir;
