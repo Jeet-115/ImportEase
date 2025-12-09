@@ -78,10 +78,20 @@ const bootstrap = async () => {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 };
 
+// -------------------------------
+// EXPORT for production (electron import)
+// -------------------------------
 export default async function startServer() {
   try {
     await bootstrap();
   } catch (error) {
     console.error("Failed to start backend:", error);
   }
+}
+
+// -------------------------------
+// AUTO-RUN when executed directly (development spawn)
+// -------------------------------
+if (process.argv[1] && process.argv[1].endsWith("server.js")) {
+  startServer();
 }

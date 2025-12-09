@@ -312,10 +312,10 @@ const startBackend = async () => {
     // ✅ Dev mode
     const backendEntry = path.join(__dirname, "backend", "server.js");
 
-    backendProcess = spawn("node", [backendEntry], {
+    backendProcess = spawn(process.execPath, [backendEntry], {
       env: {
         ...process.env,
-        PORT: BACKEND_PORT,
+        PORT: BACKEND_PORT
       },
       stdio: "pipe",
     });
