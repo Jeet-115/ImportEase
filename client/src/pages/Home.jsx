@@ -43,7 +43,7 @@ const Home = () => {
           Think of this as your assistant for GSTR-2B: first pick a company,
           then upload the Excel, review suggested ledgers and actions, and
           finally download a clean purchase register for Tally. Every screen
-          explains the next step so non-technical users can follow along safely.
+          explains the next step so non-technical users can follow along safely..
         </p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-left">
           {[
