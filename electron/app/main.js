@@ -470,40 +470,41 @@ const registerIpcHandlers = () => {
 
   ipcMain.handle("ping", () => "pong");
 
-   ipcMain.handle("get-device-id", async () => {
+  ipcMain.handle("get-device-id", async () => {
+    // Wait for updater locks to release
+    await delay(1500);
+  
     try {
       const deviceFile = path.join(DATA_DIR, "auth", "device.json");
-      if (fs.existsSync(deviceFile)) {
-        const raw = fs.readFileSync(deviceFile, "utf8");
-        if (raw.trim()) {
+  
+      let deviceId = null;
+  
+      // Attempt to read existing ID safely
+      try {
+        if (fs.existsSync(deviceFile)) {
+          const raw = fs.readFileSync(deviceFile, "utf8");
           const parsed = JSON.parse(raw);
-          if (parsed?.deviceId) {
-            return parsed.deviceId;
-          }
+          if (parsed?.deviceId) return parsed.deviceId;
         }
+      } catch {
+        console.warn("[ipc] device.json corrupted — regenerating");
       }
-
+  
+      // Generate new one
       const baseId = machineIdSync(true);
-      const hash = crypto
-        .createHash("sha256")
-        .update(baseId)
-        .digest("hex");
-      const deviceId = `DEV-${hash}`;
-
-      const dir = path.dirname(deviceFile);
-      fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(
-        deviceFile,
-        JSON.stringify({ deviceId }, null, 2),
-        "utf8",
-      );
-
+      const hash = crypto.createHash("sha256").update(baseId).digest("hex");
+      deviceId = `DEV-${hash}`;
+  
+      fs.mkdirSync(path.dirname(deviceFile), { recursive: true });
+      fs.writeFileSync(deviceFile, JSON.stringify({ deviceId }, null, 2), "utf8");
+  
       return deviceId;
     } catch (error) {
       console.error("[ipc] get-device-id failed:", error);
-      throw error;
+      return "ERROR_DEVICE_ID";
     }
   });
+  
 
   ipcMain.handle("read-json", async (_, filename) => {
     try {
