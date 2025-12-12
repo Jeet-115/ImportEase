@@ -24,7 +24,7 @@ const CSV_COLUMN_MAP = {
   "Invoice number": "invoiceNumber",
   "Invoice type": "invoiceType",
   "Invoice Date": "invoiceDate",
-  "Invoice Value (₹)": "invoiceValue",
+  "Invoice Value (%u20B9)": "invoiceValue",
   "Place of supply": "placeOfSupply",
   "Supply Attract Reverse Charge": "reverseCharge",
   "Rate (%)": "ratePercent",

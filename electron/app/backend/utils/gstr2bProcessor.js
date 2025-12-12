@@ -164,8 +164,11 @@ const interpretReverseChargeValue = (value) => {
 
 const processRowWithMap = (row, index, gstStateMap, reverseChargeLabel = null) => {
   const gstin = (row?.gstin || "").trim();
-  const stateCode = gstin.slice(0, 2);
-  const state = gstStateMap.get(stateCode) || null;
+  const stateFromPos = (row?.placeOfSupply || "").trim();
+  const supplierStateFromGstin = (() => {
+    const code = gstin.slice(0, 2);
+    return gstStateMap.get(code) || null;
+  })();
 
   const taxableValue = parseNumber(row?.taxableValue);
   const invoiceValue = parseNumber(row?.invoiceValue);
@@ -201,8 +204,9 @@ const processRowWithMap = (row, index, gstStateMap, reverseChargeLabel = null) =
     supplierName: row?.tradeName || null,
     gstRegistrationType: row?.invoiceType || null,
     gstinUin: gstin || null,
-    state,
-    supplierState: row?.placeOfSupply || null,
+    // Per requirement: state = Place of Supply; supplierState = from supplier GSTIN
+    state: stateFromPos || null,
+    supplierState: supplierStateFromGstin,
     supplierAmount: null,
     supplierDrCr: "CR",
     "Reverse Supply Charge": reverseChargeLabel,
