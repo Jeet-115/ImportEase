@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import companyMasterRoutes from "./routes/companymasterroutes.js";
 import gstinNumberRoutes from "./routes/gstinnumberroutes.js";
 import gstr2BImportRoutes from "./routes/gstr2bimportroutes.js";
+import gstr2AImportRoutes from "./routes/gstr2aimportroutes.js";
 import ledgerNameRoutes from "./routes/ledgernameroutes.js";
 import partyMasterRoutes from "./routes/partymasterroutes.js";
 import softwareAuthRoutes from "./routes/softwareAuthRoutes.js";
@@ -60,6 +61,7 @@ app.use("/software", softwareAuthRoutes);
 app.use("/api/company-master", softwareAuthGuard, companyMasterRoutes);
 app.use("/api/gstin-numbers", softwareAuthGuard, gstinNumberRoutes);
 app.use("/api/gstr2b-imports", softwareAuthGuard, gstr2BImportRoutes);
+app.use("/api/gstr2a-imports", softwareAuthGuard, gstr2AImportRoutes);
 app.use("/api/ledger-names", softwareAuthGuard, ledgerNameRoutes);
 app.use("/api/party-masters", softwareAuthGuard, partyMasterRoutes);
 

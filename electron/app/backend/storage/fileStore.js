@@ -20,6 +20,8 @@ const COLLECTIONS = {
   gstinNumbers: { filename: "gstinNumbers.json", defaultValue: [] },
   gstr2bImports: { filename: "gstr2bImports.json", defaultValue: [] },
   processedFiles: { filename: "processedFiles.json", defaultValue: [] },
+  gstr2aImports: { filename: "gstr2aImports.json", defaultValue: [] },
+  processedFiles2A: { filename: "processedFiles2A.json", defaultValue: [] },
 };
 
 const locks = new Map();
