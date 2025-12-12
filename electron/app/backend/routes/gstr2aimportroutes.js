@@ -11,6 +11,7 @@ import {
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
   deleteImport,
+  appendManualRows,
 } from "../controllers/gstr2aimportcontroller.js";
 
 const router = express.Router();
@@ -24,6 +25,7 @@ router.put("/:id/processed/ledger-names", updateProcessedLedgerNames);
 router.put("/:id/processed/reverse-charge/ledger-names", updateReverseChargeLedgerNames);
 router.put("/:id/processed/mismatched/ledger-names", updateMismatchedLedgerNames);
 router.put("/:id/processed/disallow/ledger-names", updateDisallowLedgerNames);
+router.post("/:id/processed/manual-rows", appendManualRows);
 router.delete("/:id", deleteImport);
 
 export default router;

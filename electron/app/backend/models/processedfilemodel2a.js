@@ -923,3 +923,40 @@ export const deleteById = async (id) =>
     return { nextData, result: deleted };
   });
 
+export const appendManualRows = async (id, manualRows = []) =>
+  mutateCollection(COLLECTION_KEY, (entries) => {
+    const index = entries.findIndex((entry) => entry._id === id);
+    if (index === -1) {
+      return { nextData: entries, result: null, skipWrite: true };
+    }
+
+    const target = entries[index] || {};
+    const processedRows = Array.isArray(target.processedRows)
+      ? target.processedRows
+      : [];
+
+    const startIndex = processedRows.length;
+    const manualWithSource = manualRows.map((row, idx) => ({
+      ...row,
+      _sourceRowId: startIndex + idx,
+    }));
+
+    const combinedProcessed = renumberRows([
+      ...processedRows,
+      ...manualWithSource,
+    ]);
+
+    const syncedCollections = syncDerivedCollections(combinedProcessed, target);
+
+    const updated = {
+      ...target,
+      processedRows: combinedProcessed,
+      ...syncedCollections,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextData = [...entries];
+    nextData[index] = updated;
+    return { nextData, result: updated };
+  });
+

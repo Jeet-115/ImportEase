@@ -8,13 +8,14 @@ import {
 } from "../models/gstr2aimportmodel.js";
 import {
   findById as findProcessedById,
+  appendManualRows as appendManualRowsById,
   updateLedgerNames as updateProcessedLedgerNamesById,
   updateReverseChargeLedgerNames as updateReverseChargeLedgerNamesById,
   updateMismatchedLedgerNames as updateMismatchedLedgerNamesById,
   updateDisallowLedgerNames as updateDisallowLedgerNamesById,
   deleteById as deleteProcessedById,
 } from "../models/processedfilemodel2a.js";
-import { processAndStoreDocument } from "../utils/gstr2aProcessor.js";
+import { processRows, processAndStoreDocument } from "../utils/gstr2aProcessor.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -259,6 +260,37 @@ const sanitizeLedgerUpdateRows = (rows = []) =>
     );
 
 export const uploadMiddleware = upload.single("file");
+
+const sanitizeManualRows = (rows = []) =>
+  rows
+    .map((row, idx) => {
+      const entry = { ...row };
+      // Normalize field names to backend expectations
+      entry.invoiceDate = row?.date ?? row?.invoiceDate ?? null;
+      entry.invoiceNumber = row?.vchNo ?? row?.invoiceNumber ?? null;
+      entry.referenceNo = entry.invoiceNumber;
+      entry.referenceDate = entry.invoiceDate;
+      entry.gstin = row?.gstin ?? row?.gstinUin ?? null;
+      entry.placeOfSupply = row?.state ?? row?.placeOfSupply ?? null;
+      entry.state = row?.state ?? row?.placeOfSupply ?? null;
+      entry.supplierName = row?.supplierName ?? row?.["Supplier Name"] ?? null;
+      entry.itcAvailability = row?.itcAvailability ?? row?.["ITC Availability"] ?? null;
+      entry.reverseCharge = row?.reverseCharge ?? row?.["Reverse Supply Charge"] ?? null;
+      entry.action = row?.action ?? row?.Action ?? null;
+      entry.actionReason = row?.actionReason ?? row?.["Action Reason"] ?? null;
+      entry.narration = row?.narration ?? row?.Narration ?? null;
+      entry.ledgerName = row?.ledgerName ?? row?.["Ledger Name"] ?? null;
+      entry.ratePercent = row?.ratePercent ?? row?.["Rate (%)"] ?? null;
+      entry.igst = row?.igst ?? row?.["IGST"] ?? null;
+      entry.cgst = row?.cgst ?? row?.["CGST"] ?? null;
+      entry.sgst = row?.sgst ?? row?.["SGST/UTGST"] ?? null;
+      entry.cess = row?.cess ?? row?.["Cess"] ?? null;
+      entry.taxableValue = row?.taxableValue ?? row?.["Taxable Value"] ?? null;
+      entry._isNewManual = true;
+      entry._clientProvidedIndex = idx;
+      return entry;
+    })
+    .filter((r) => r && Object.values(r).some((v) => v !== null && v !== undefined && String(v).trim() !== ""));
 
 export const importGstr2ACSV = async (req, res) => {
   try {
@@ -523,6 +555,48 @@ export const updateDisallowLedgerNames = async (req, res) => {
     console.error("updateDisallowLedgerNames Error:", error);
     return res.status(500).json({
       message: error.message || "Failed to update disallow ledger names.",
+    });
+  }
+};
+
+export const appendManualRows = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    const sanitized = sanitizeManualRows(rows).filter((r) => !r.isNew);
+    if (!sanitized.length) {
+      return res.status(400).json({ message: "No manual rows provided." });
+    }
+    const importDoc = await findImportById(id);
+    if (!importDoc) {
+      return res.status(404).json({ message: "Import not found." });
+    }
+    const processedDoc = await findProcessedById(id);
+    if (!processedDoc) {
+      return res.status(404).json({ message: "Processed file not found." });
+    }
+    const companyId = importDoc.company;
+    const startIndex = Array.isArray(processedDoc.processedRows)
+      ? processedDoc.processedRows.length
+      : 0;
+    const { processedRows: manualProcessed } = await processRows(
+      sanitized,
+      companyId,
+      startIndex
+    );
+
+    const updated = await appendManualRowsById(id, manualProcessed);
+    if (!updated) {
+      return res.status(404).json({ message: "Processed file not found." });
+    }
+    return res.status(200).json({
+      message: "Manual rows appended.",
+      processed: updated,
+    });
+  } catch (error) {
+    console.error("appendManualRows Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to append manual rows.",
     });
   }
 };

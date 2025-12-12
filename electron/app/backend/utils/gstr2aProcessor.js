@@ -153,9 +153,16 @@ const interpretReverseChargeValue = (value) => {
   };
 };
 
-const processRowWithMap = async (row, index, gstStateMap, partyMasterMap, reverseChargeLabel = null, companyId) => {
+const processRowWithMap = async (
+  row,
+  index,
+  gstStateMap,
+  partyMasterMap,
+  reverseChargeLabel = null,
+  companyId
+) => {
   const gstin = (row?.gstin || "").trim();
-  const stateFromPos = (row?.placeOfSupply || "").trim();
+  const stateFromPos = (row?.state || row?.placeOfSupply || "").trim();
   const supplierStateFromGstin = (() => {
     const code = gstin.slice(0, 2);
     return gstStateMap.get(code) || null;
@@ -163,7 +170,14 @@ const processRowWithMap = async (row, index, gstStateMap, partyMasterMap, revers
   
   // Lookup supplier name from party master
   const normalizedGstin = gstin.toUpperCase();
-  const supplierName = partyMasterMap.get(normalizedGstin) || row?.supplierName || null;
+  const partySupplier = partyMasterMap.get(normalizedGstin);
+  const supplierName =
+    partySupplier !== undefined && partySupplier !== null
+      ? partySupplier
+      : row?.supplierName || null;
+  const supplierNameAutoFilled = Boolean(
+    partySupplier !== undefined && partySupplier !== null
+  );
 
   const taxableValue = parseNumber(row?.taxableValue);
   const invoiceValue = parseNumber(row?.invoiceValue);
@@ -186,6 +200,7 @@ const processRowWithMap = async (row, index, gstStateMap, partyMasterMap, revers
     referenceNo: row?.invoiceNumber || null,
     referenceDate: rawInvoiceDate,
     supplierName: supplierName,
+    _supplierNameAutoFilled: supplierNameAutoFilled,
     gstRegistrationType: row?.invoiceType === "R" ? "Regular" : row?.invoiceType || null,
     gstinUin: gstin || null,
     // Per requirement: state = Place of Supply; supplierState = from supplier GSTIN
@@ -305,7 +320,7 @@ const processRowWithMap = async (row, index, gstStateMap, partyMasterMap, revers
   return { record: base, isMismatched };
 };
 
-export const processRows = async (rows, companyId) => {
+export const processRows = async (rows, companyId, startIndex = 0) => {
   // Deduplicate rows defensively by invoice number + gstin; keep the first (earliest) occurrence.
   const seenKeys = new Set();
   const uniqueRows = (Array.isArray(rows) ? rows : []).filter((row) => {
@@ -327,6 +342,7 @@ export const processRows = async (rows, companyId) => {
 
   for (let index = 0; index < uniqueRows.length; index++) {
     const row = uniqueRows[index];
+    const absoluteIndex = startIndex + index;
     
     // Check if this row has reverse charge = "yes"
     const { isReverseCharge, displayValue: reverseChargeLabel } =
@@ -334,7 +350,7 @@ export const processRows = async (rows, companyId) => {
     
     const { record, isMismatched } = await processRowWithMap(
       row,
-      index,
+      absoluteIndex,
       gstStateMap,
       partyMasterMap,
       reverseChargeLabel,

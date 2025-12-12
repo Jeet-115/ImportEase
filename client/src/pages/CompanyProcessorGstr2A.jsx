@@ -22,6 +22,7 @@ import {
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
   fetchImportById,
+  appendManualRows as appendManualRowsApi,
 } from "../services/gstr2aservice";
 import {
   createLedgerName as createLedgerNameApi,
@@ -321,6 +322,9 @@ const CompanyProcessorGstr2A = () => {
   const [narrationDrafts, setNarrationDrafts] = useState({});
   const [itcAvailabilityDrafts, setItcAvailabilityDrafts] = useState({});
 const [supplierNameDrafts, setSupplierNameDrafts] = useState({});
+  const [manualRows, setManualRows] = useState([
+    { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+  ]);
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
@@ -342,6 +346,116 @@ const getSupplierPayloadValue = useCallback(
   },
   [supplierNameDrafts]
 );
+
+  const addEmptyManualRow = useCallback(() => {
+    setManualRows((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        isNew: true,
+        reverseCharge: "No",
+        itcAvailability: "Yes",
+      },
+    ]);
+  }, []);
+
+  const handleManualRowChange = useCallback(
+    (rowId, field, value) => {
+      setManualRows((prev) => {
+        const next = prev.map((row) =>
+          row.id === rowId ? { ...row, [field]: value } : row
+        );
+        const row = next.find((r) => r.id === rowId);
+        const hasValue = Object.entries(row).some(
+          ([key, val]) =>
+            key !== "id" &&
+            key !== "isNew" &&
+            val !== null &&
+            val !== undefined &&
+            String(val).trim() !== ""
+        );
+        if (row.isNew && hasValue) {
+          row.isNew = false;
+          addEmptyManualRow();
+        }
+        // supplierName override on gstin if party master match
+        if (field === "gstin") {
+          const gstin = String(value || "").trim().toUpperCase();
+          if (gstin && partyMasters.length) {
+            const match = partyMasters.find(
+              (p) => (p.gstin || "").trim().toUpperCase() === gstin
+            );
+            if (match) {
+              row.supplierName = match.partyName || "";
+              row._supplierNameAutoFilled = true;
+            } else {
+              row._supplierNameAutoFilled = false;
+            }
+          }
+          const stateCode = gstin.slice(0, 2);
+          row.supplierState = gstStateMap[stateCode] || "";
+        }
+        return [...next];
+      });
+    },
+    [addEmptyManualRow, gstStateMap, partyMasters]
+  );
+
+  const manualHasValue = (row) =>
+    Object.entries(row).some(
+      ([key, val]) =>
+        key !== "id" &&
+        key !== "isNew" &&
+        val !== null &&
+        val !== undefined &&
+        String(val).trim() !== ""
+    );
+
+  const saveManualRows = useCallback(async () => {
+    if (!importId) return;
+    const payloadRows = manualRows
+      .filter((r) => !r.isNew && manualHasValue(r))
+      .map((r) => ({
+        date: r.date ?? null,
+        vchNo: r.vchNo ?? null,
+        supplierName: r.supplierName ?? null,
+        gstin: r.gstin ?? null,
+        state: r.state ?? null,
+        taxableValue: r.taxableValue ?? null,
+        ratePercent: r.ratePercent ?? null,
+        igst: r.igst ?? null,
+        cgst: r.cgst ?? null,
+        sgst: r.sgst ?? null,
+        cess: r.cess ?? null,
+        reverseCharge: r.reverseCharge ?? null,
+        itcAvailability: r.itcAvailability ?? null,
+        ledgerName: r.ledgerName ?? null,
+        action: r.action ?? null,
+        actionReason: r.actionReason ?? null,
+        narration: r.narration ?? null,
+      }));
+    if (!payloadRows.length) return;
+    setProcessing(true);
+    try {
+      await appendManualRowsApi(importId, { rows: payloadRows });
+      const { data } = await fetchProcessedFile(importId);
+      setProcessedDoc(data);
+      setManualRows([
+        { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+      ]);
+      setStatus({ type: "success", message: "Manual rows saved." });
+    } catch (error) {
+      console.error("Failed to save manual rows:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to save manual rows.",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  }, [importId, manualRows, manualHasValue, fetchProcessedFile]);
 
   const originalRowsCache = useRef({});
   const importDocCache = useRef({});
@@ -3434,6 +3548,265 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
             </div>
           </motion.section>
         ) : null}
+      </section>
+      {/* Manual row entry - GSTR-2A only */}
+      <section className="mt-6 mb-20">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-slate-800">
+            Manual Rows (GSTR-2A)
+          </h3>
+          <button
+            type="button"
+            onClick={saveManualRows}
+            className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+            disabled={processing}
+          >
+            Save Manual Rows
+          </button>
+        </div>
+        <div className="overflow-auto rounded-xl border border-amber-100">
+          <table className="min-w-[1600px] text-xs text-slate-700 table-fixed mb-20">
+            <thead className="bg-amber-50">
+              <tr>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Date</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Vch No</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Supplier Name</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">GSTIN</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">State</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Supplier State</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Taxable Value</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Rate %</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">IGST</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">CGST</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">SGST/UTGST</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Cess</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Reverse Charge</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">ITC Availability</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Ledger Name</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Action</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Action Reason</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Narration</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-amber-50">
+              {manualRows.map((row) => (
+                <tr key={row.id} className="hover:bg-amber-50/40">
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.date ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "date", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.vchNo ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "vchNo", e.target.value)
+                      }
+                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.supplierName ?? ""}
+                      onChange={(e) =>
+                        row._supplierNameAutoFilled
+                          ? null
+                          : handleManualRowChange(row.id, "supplierName", e.target.value)
+                      }
+                      readOnly={row._supplierNameAutoFilled}
+                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                      placeholder={row._supplierNameAutoFilled ? "Auto-filled" : "Supplier Name"}
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.gstin ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "gstin", e.target.value)
+                      }
+                      className="w-32 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.state ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "state", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-slate-500">
+                    {row.supplierState || ""}
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.taxableValue ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "taxableValue", e.target.value)
+                      }
+                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.ratePercent ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "ratePercent", e.target.value)
+                      }
+                      className="w-16 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.igst ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "igst", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.cgst ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "cgst", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.sgst ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "sgst", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.cess ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "cess", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <select
+                      value={row.reverseCharge ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "reverseCharge", e.target.value)
+                      }
+                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </td>
+                  <td className="px-2 py-2">
+                    <select
+                      value={row.itcAvailability ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "itcAvailability", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </td>
+                  <td className="px-2 py-2 overflow-visible align-top">
+                    <div className="w-48">
+                      <LedgerNameDropdown
+                        value={row.ledgerName ?? ""}
+                        options={ledgerNames}
+                        onChange={(newValue) =>
+                          handleManualRowChange(row.id, "ledgerName", newValue)
+                        }
+                        onAddNew={async (newName) => {
+                          try {
+                            await createLedgerNameApi({ name: newName });
+                            await loadLedgerNames();
+                            handleManualRowChange(row.id, "ledgerName", newName);
+                            setStatus({
+                              type: "success",
+                              message: "Ledger name added.",
+                            });
+                          } catch (error) {
+                            console.error("Failed to add ledger name:", error);
+                            setStatus({
+                              type: "error",
+                              message:
+                                error?.response?.data?.message ||
+                                "Unable to add ledger name.",
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-2 py-2 overflow-visible align-top">
+                  <div className="relative z-10 w-28">
+                    <select
+                      value={row.action ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "action", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    >
+                      <option value="">Action</option>
+                      {ACTION_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    </div>
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.actionReason ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "actionReason", e.target.value)
+                      }
+                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.narration ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "narration", e.target.value)
+                      }
+                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
       {addLedgerModal.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">

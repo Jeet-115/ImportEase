@@ -44,3 +44,6 @@ export const updateDisallowLedgerNames = (id, payload) =>
 export const deleteImport = (id) =>
   axiosInstance.delete(`/api/gstr2a-imports/${id}`);
 
+export const appendManualRows = (id, payload) =>
+  axiosInstance.post(`/api/gstr2a-imports/${id}/processed/manual-rows`, payload);
+
