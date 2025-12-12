@@ -5,16 +5,8 @@ import {
 
 const COLLECTION_KEY = "processedFiles";
 
-const DISALLOW_LEDGER_NAMES = [
-  "Penalty [disallow]",
-  "Repair of Vehicle [disallow]",
-  "Insurance of Vehicle [disallow]",
-  "Festival Exp. [disallow]",
-];
-
-const DISALLOW_LEDGER_SET = new Set(
-  DISALLOW_LEDGER_NAMES.map((name) => name.toLowerCase())
-);
+// Disallow ledger names that should be separated into a disallow sheet
+// Any ledger name containing "[disallow]" (case-insensitive) will be treated as disallow
 
 export const findById = async (id) => {
   const entries = await readCollection(COLLECTION_KEY);
@@ -84,9 +76,17 @@ const normalizeActionReason = (value) => {
   return trimmed.length ? trimmed : null;
 };
 
+const normalizeNarration = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length ? trimmed : null;
+};
+
 const isDisallowLedger = (ledgerName) => {
   if (!ledgerName) return false;
-  return DISALLOW_LEDGER_SET.has(String(ledgerName).trim().toLowerCase());
+  const normalizedName = String(ledgerName).trim().toLowerCase();
+  return normalizedName.includes("[disallow]");
 };
 
 const renumberRows = (rows = []) =>
@@ -114,6 +114,10 @@ const buildUpdateMaps = (rows = []) => {
       row,
       "actionReason"
     );
+    const hasNarration = Object.prototype.hasOwnProperty.call(
+      row,
+      "narration"
+    );
 
     const ledgerName = hasLedgerName
       ? normalizeLedgerName(row.ledgerName)
@@ -125,8 +129,11 @@ const buildUpdateMaps = (rows = []) => {
     const actionReason = hasActionReason
       ? normalizeActionReason(row.actionReason)
       : undefined;
+    const narration = hasNarration
+      ? normalizeNarration(row.narration)
+      : undefined;
 
-    if (!hasLedgerName && !hasAcceptCredit && !hasAction && !hasActionReason) {
+    if (!hasLedgerName && !hasAcceptCredit && !hasAction && !hasActionReason && !hasNarration) {
       return;
     }
 
@@ -137,7 +144,7 @@ const buildUpdateMaps = (rows = []) => {
     ) {
       const slKey = Number(row.slNo);
       if (!Number.isNaN(slKey)) {
-        bySlNo.set(slKey, { ledgerName, acceptCredit, action, actionReason });
+        bySlNo.set(slKey, { ledgerName, acceptCredit, action, actionReason, narration });
         return;
       }
     }
@@ -148,7 +155,7 @@ const buildUpdateMaps = (rows = []) => {
     ) {
       const idxKey = Number(row.index);
       if (!Number.isNaN(idxKey)) {
-        byIndex.set(idxKey, { ledgerName, acceptCredit, action, actionReason });
+        byIndex.set(idxKey, { ledgerName, acceptCredit, action, actionReason, narration });
       }
     }
   });
@@ -220,6 +227,11 @@ const applyLedgerUpdatesToCollection = (
       Object.prototype.hasOwnProperty.call(nextValue, "actionReason")
         ? nextValue.actionReason ?? null
         : undefined;
+    const targetNarration =
+      nextValue &&
+      Object.prototype.hasOwnProperty.call(nextValue, "narration")
+        ? nextValue.narration ?? null
+        : undefined;
 
     let rowChanged = false;
     let updatedRow = row;
@@ -264,6 +276,16 @@ const applyLedgerUpdatesToCollection = (
       }
     }
 
+    if (targetNarration !== undefined) {
+      if ((row?.["Narration"] ?? null) !== targetNarration) {
+        updatedRow = {
+          ...updatedRow,
+          "Narration": targetNarration,
+        };
+        rowChanged = true;
+      }
+    }
+
     if (!rowChanged) {
       return row;
     }
@@ -275,6 +297,7 @@ const applyLedgerUpdatesToCollection = (
       acceptCredit: targetAccept,
       action: targetAction,
       actionReason: targetActionReason,
+      narration: targetNarration,
     });
     return updatedRow;
   });
@@ -299,7 +322,7 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
   const nextRows = [...processedRows];
 
   changedEntries.forEach(
-    ({ sourceKey, ledgerName, acceptCredit: acceptCreditValue, action, actionReason }) => {
+    ({ sourceKey, ledgerName, acceptCredit: acceptCreditValue, action, actionReason, narration }) => {
       if (!sourceKey || !indexMap.has(sourceKey)) return;
       const targetIdx = indexMap.get(sourceKey);
       const current = nextRows[targetIdx];
@@ -359,6 +382,20 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
         }
       }
 
+      if (narration !== undefined) {
+        const normalizedNarration = normalizeNarration(narration);
+        if (
+          (current?.["Narration"] ?? null) !==
+          (normalizedNarration ?? null)
+        ) {
+          updatedRow = {
+            ...updatedRow,
+            "Narration": normalizedNarration ?? null,
+          };
+          rowChanged = true;
+        }
+      }
+
       if (rowChanged) {
         nextRows[targetIdx] = updatedRow;
         changed = true;
@@ -381,6 +418,7 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
         acceptCredit: row?.["Accept Credit"] ?? null,
         action: row?.Action ?? null,
         actionReason: row?.["Action Reason"] ?? null,
+        narration: row?.["Narration"] ?? null,
       });
     }
   });
@@ -396,6 +434,7 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
     const currentAccept = row?.["Accept Credit"] ?? null;
     const currentAction = row?.Action ?? null;
     const currentActionReason = row?.["Action Reason"] ?? null;
+    const currentNarration = row?.["Narration"] ?? null;
     let rowChanged = false;
     let updatedRow = row;
 
@@ -432,6 +471,16 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
         updatedRow = {
           ...updatedRow,
           "Action Reason": source.actionReason,
+        };
+        rowChanged = true;
+      }
+    }
+
+    if (source.narration !== undefined) {
+      if (currentNarration !== source.narration) {
+        updatedRow = {
+          ...updatedRow,
+          "Narration": source.narration,
         };
         rowChanged = true;
       }

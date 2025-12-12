@@ -37,7 +37,17 @@ const createSheetFromRows = (rows = [], header) => {
     return XLSX.utils.aoa_to_sheet([["No data available"]]);
   }
   if (header?.length) {
-    return XLSX.utils.json_to_sheet(rows, { header });
+    // Ensure all rows have all header properties (even if null/undefined)
+    const normalizedRows = rows.map((row) => {
+      const normalized = { ...row };
+      header.forEach((h) => {
+        if (!Object.prototype.hasOwnProperty.call(normalized, h)) {
+          normalized[h] = null;
+        }
+      });
+      return normalized;
+    });
+    return XLSX.utils.json_to_sheet(normalizedRows, { header });
   }
   return XLSX.utils.json_to_sheet(rows);
 };
@@ -78,20 +88,11 @@ const COLOR_MAP = {
 };
 
 // Disallow ledger names that should be separated into a disallow sheet
-const DISALLOW_LEDGER_NAMES = [
-  "Penalty [disallow]",
-  "Repair of Vehicle [disallow]",
-  "Insurance of Vehicle [disallow]",
-  "Festival Exp. [disallow]",
-];
-
-const DISALLOW_LEDGER_SET = new Set(
-  DISALLOW_LEDGER_NAMES.map((name) => name.toLowerCase())
-);
-
+// Any ledger name containing "[disallow]" (case-insensitive) will be treated as disallow
 const isDisallowLedger = (ledgerName) => {
   if (!ledgerName) return false;
-  return DISALLOW_LEDGER_SET.has(String(ledgerName).trim().toLowerCase());
+  const normalizedName = String(ledgerName).trim().toLowerCase();
+  return normalizedName.includes("[disallow]");
 };
 
 const normalizeActionValue = (value) => {
@@ -150,8 +151,8 @@ export const buildCombinedWorkbook = ({
       ? Object.keys(processedRows[0])
       : [];
   
-  // Reorder headers to place Accept Credit, Action, Action Reason after Change Mode
-  const reorderHeaders = (headers, columnsToInsert = ["Accept Credit", "Action", "Action Reason"]) => {
+  // Reorder headers to place Accept Credit, Action, Action Reason, Narration after Change Mode
+  const reorderHeaders = (headers, columnsToInsert = ["Accept Credit", "Action", "Action Reason", "Narration"]) => {
     const changeModeIndex = headers.findIndex((h) => h === "Change Mode" || h === "changeMode");
     if (changeModeIndex === -1) {
       // If Change Mode not found, just ensure columns exist
@@ -180,7 +181,7 @@ export const buildCombinedWorkbook = ({
     return [...filteredBefore, changeModeHeader, ...columnsToInsert, ...filteredAfter];
   };
   
-  const reorderedHeaders = reorderHeaders(derivedHeaders.filter((h) => h !== "Category"), ["Accept Credit", "Action", "Action Reason"]);
+  const reorderedHeaders = reorderHeaders(derivedHeaders.filter((h) => h !== "Category"), ["Accept Credit", "Action", "Action Reason", "Narration"]);
   
   // Ensure GSTR-2B columns are included in master headers
   const additionalHeaders = [];
@@ -1081,30 +1082,30 @@ export const buildCombinedWorkbook = ({
   };
 
   // Remaining sheets
-  // Processed sheet: Accept Credit, Action, Action Reason
-  const processedSheetHeaders = ensureColumnsInHeaders(derivedHeaders, ["Accept Credit", "Action", "Action Reason"]);
-  const processedHeadersOrdered = reorderSheetHeaders(processedSheetHeaders, ["Accept Credit", "Action", "Action Reason"]);
+  // Processed sheet: Accept Credit, Action, Action Reason, Narration
+  const processedSheetHeaders = ensureColumnsInHeaders(derivedHeaders, ["Accept Credit", "Action", "Action Reason", "Narration"]);
+  const processedHeadersOrdered = reorderSheetHeaders(processedSheetHeaders, ["Accept Credit", "Action", "Action Reason", "Narration"]);
   const tallySheet = createSheetFromRows(processedRows, processedHeadersOrdered);
   XLSX.utils.book_append_sheet(workbook, tallySheet, "TallyProcessed");
 
-  // Mismatched sheet: Accept Credit, Action, Action Reason
+  // Mismatched sheet: Accept Credit, Action, Action Reason, Narration
   const mismatchedHeaders = mismatchedRows[0] ? Object.keys(mismatchedRows[0]) : [];
-  const mismatchedHeadersWithColumns = ensureColumnsInHeaders(mismatchedHeaders, ["Accept Credit", "Action", "Action Reason"]);
-  const mismatchedHeadersOrdered = reorderSheetHeaders(mismatchedHeadersWithColumns, ["Accept Credit", "Action", "Action Reason"]);
+  const mismatchedHeadersWithColumns = ensureColumnsInHeaders(mismatchedHeaders, ["Accept Credit", "Action", "Action Reason", "Narration"]);
+  const mismatchedHeadersOrdered = reorderSheetHeaders(mismatchedHeadersWithColumns, ["Accept Credit", "Action", "Action Reason", "Narration"]);
   const mismatchedSheet = createSheetFromRows(mismatchedRows, mismatchedHeadersOrdered);
   XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
 
-  // RCM sheet: Action, Action Reason (no Accept Credit)
+  // RCM sheet: Action, Action Reason, Narration (no Accept Credit)
   const rcmHeaders = reverseChargeRows[0] ? Object.keys(reverseChargeRows[0]) : [];
-  const rcmHeadersWithColumns = ensureColumnsInHeaders(rcmHeaders, ["Action", "Action Reason"]);
-  const rcmHeadersOrdered = reorderSheetHeaders(rcmHeadersWithColumns, ["Action", "Action Reason"]);
+  const rcmHeadersWithColumns = ensureColumnsInHeaders(rcmHeaders, ["Action", "Action Reason", "Narration"]);
+  const rcmHeadersOrdered = reorderSheetHeaders(rcmHeadersWithColumns, ["Action", "Action Reason", "Narration"]);
   const rcmSheet = createSheetFromRows(reverseChargeRows, rcmHeadersOrdered);
   XLSX.utils.book_append_sheet(workbook, rcmSheet, "RCM");
 
-  // Disallow sheet: Action, Action Reason (no Accept Credit)
+  // Disallow sheet: Action, Action Reason, Narration (no Accept Credit)
   const disallowHeaders = disallowRows[0] ? Object.keys(disallowRows[0]) : [];
-  const disallowHeadersWithColumns = ensureColumnsInHeaders(disallowHeaders, ["Action", "Action Reason"]);
-  const disallowHeadersOrdered = reorderSheetHeaders(disallowHeadersWithColumns, ["Action", "Action Reason"]);
+  const disallowHeadersWithColumns = ensureColumnsInHeaders(disallowHeaders, ["Action", "Action Reason", "Narration"]);
+  const disallowHeadersOrdered = reorderSheetHeaders(disallowHeadersWithColumns, ["Action", "Action Reason", "Narration"]);
   const disallowSheet = createSheetFromRows(
     disallowRows,
     disallowHeadersOrdered

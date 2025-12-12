@@ -97,19 +97,13 @@ const getNormalizedSupplierName = (row = {}) => {
 };
 
 // Disallow ledger names that should be separated into a disallow sheet
-const DISALLOW_LEDGER_NAMES = [
-  "Penalty [disallow]",
-  "Repair of Vehicle [disallow]",
-  "Insurance of Vehicle [disallow]",
-  "Festival Exp. [disallow]",
-];
-
+// Any ledger name containing "[disallow]" (case-insensitive) will be treated as disallow
 // Function to filter rows with disallow ledger names
 const filterDisallowRows = (rows) => {
   if (!Array.isArray(rows)) return [];
   return rows.filter((row) => {
-    const ledgerName = String(row?.["Ledger Name"] || "").trim();
-    return DISALLOW_LEDGER_NAMES.includes(ledgerName);
+    const ledgerName = String(row?.["Ledger Name"] || "").trim().toLowerCase();
+    return ledgerName.includes("[disallow]");
   });
 };
 
@@ -175,6 +169,7 @@ const B2BCompanyHistory = () => {
   const [modalAcceptCreditDrafts, setModalAcceptCreditDrafts] = useState({});
   const [modalActionDrafts, setModalActionDrafts] = useState({});
   const [modalActionReasonDrafts, setModalActionReasonDrafts] = useState({});
+  const [modalNarrationDrafts, setModalNarrationDrafts] = useState({});
   const [
     modalLedgerPropagationSelections,
     setModalLedgerPropagationSelections,
@@ -258,6 +253,7 @@ const B2BCompanyHistory = () => {
       setModalAcceptCreditDrafts({});
       setModalActionDrafts({});
       setModalActionReasonDrafts({});
+      setModalNarrationDrafts({});
     }
   }, [ledgerModal.open, ledgerModal.importId]);
 
@@ -451,12 +447,15 @@ const B2BCompanyHistory = () => {
       result.push("Accept Credit");
     }
     
-    // Add Action and Action Reason if not already present
+    // Add Action, Action Reason, and Narration if not already present
     if (!result.includes("Action")) {
       result.push("Action");
     }
     if (!result.includes("Action Reason")) {
       result.push("Action Reason");
+    }
+    if (!result.includes("Narration")) {
+      result.push("Narration");
     }
     
     return result;
@@ -492,6 +491,15 @@ const B2BCompanyHistory = () => {
           draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
         payload.actionReason = sourceValue || null;
       }
+      // Add Narration
+      const hasNarrationDraft = Object.prototype.hasOwnProperty.call(
+        modalNarrationDrafts,
+        rowKey
+      );
+      const narrationDraftValue = hasNarrationDraft ? modalNarrationDrafts[rowKey] : undefined;
+      const narrationSourceValue =
+        narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
+      payload.narration = narrationSourceValue || null;
       if (ledgerModal.activeTab === "mismatched") {
         const hasDraft = Object.prototype.hasOwnProperty.call(
           modalAcceptCreditDrafts,
@@ -514,6 +522,7 @@ const B2BCompanyHistory = () => {
       setModalAcceptCreditDrafts({});
       setModalActionDrafts({});
       setModalActionReasonDrafts({});
+      setModalNarrationDrafts({});
     },
   });
 
@@ -647,6 +656,41 @@ const B2BCompanyHistory = () => {
         return next;
       });
       // Mark as dirty if Action Reason changed
+      const actionDirty = isModalActionDirtyForRow(rowKey);
+      const acceptDirty = isMismatchedModal
+        ? isModalAcceptDirtyForRow(rowKey)
+        : false;
+      setModalAcceptDirtyState(
+        rowKey,
+        (trimmedValue !== baseValue) || actionDirty || acceptDirty
+      );
+    },
+    [
+      ledgerModalRowMap,
+      setModalAcceptDirtyState,
+      isModalActionDirtyForRow,
+      isMismatchedModal,
+    ]
+  );
+
+  const handleLedgerModalNarrationChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const trimmedValue = String(value || "").trim();
+      const baseValue = baseRow?.["Narration"] ?? "";
+      setModalNarrationDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmedValue === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmedValue;
+        return next;
+      });
+      // Mark as dirty if Narration changed
       const actionDirty = isModalActionDirtyForRow(rowKey);
       const acceptDirty = isMismatchedModal
         ? isModalAcceptDirtyForRow(rowKey)
@@ -846,7 +890,7 @@ const B2BCompanyHistory = () => {
       if (!disallowRows.length) {
         setStatus({
           type: "error",
-          message: "No rows with disallow ledger names found. Add 'Penalty [disallow]', 'Repair of Vehicle [disallow]', 'Insurance of Vehicle [disallow]', or 'Festival Exp. [disallow]' to ledger names first.",
+          message: "No rows with disallow ledger names found. Add '[disallow]' to ledger names (e.g., 'xyz [disallow]') to mark them as disallow.",
         });
         return;
       }
@@ -1536,7 +1580,7 @@ const B2BCompanyHistory = () => {
                     <tr>
                       {ledgerModalColumns.map((column) => {
                         // Skip the columns we're moving next to Ledger Name
-                        if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
                           return null;
                         }
                         return (
@@ -1551,9 +1595,9 @@ const B2BCompanyHistory = () => {
                         );
                       })}
                       {/* Add grouped header for the ledger editing fields */}
-                      {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason'].includes(col)) && (
+                      {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
                         <th 
-                          colSpan={3}
+                          colSpan={ledgerModalColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)).length}
                           className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                         >
                           Ledger Actions
@@ -1563,7 +1607,7 @@ const B2BCompanyHistory = () => {
                     <tr className="bg-amber-50">
                       {ledgerModalColumns.map((column) => {
                         // Skip the columns we're moving next to Ledger Name in the main header
-                        if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
                           return null;
                         }
                         return <th key={`sub-${column}`} className="invisible"></th>;
@@ -1582,6 +1626,11 @@ const B2BCompanyHistory = () => {
                       {ledgerModalColumns.includes('Action Reason') && (
                         <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                           Reason
+                        </th>
+                      )}
+                      {ledgerModalColumns.includes('Narration') && (
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                          Narration
                         </th>
                       )}
                     </tr>
@@ -1616,7 +1665,7 @@ const B2BCompanyHistory = () => {
                           {ledgerModalColumns.map((column) => {
                             const cellKey = `${rowKey}-${column}`;
                             // Skip the columns we're moving next to Ledger Name in the main cells
-                            if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                            if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
                               return null;
                             }
                             return (
@@ -2050,6 +2099,31 @@ const B2BCompanyHistory = () => {
                                             />
                                           );
                                         })()}
+                                      </div>
+                                    )}
+                                    
+                                    {/* Narration Field */}
+                                    {ledgerModalColumns.includes('Narration') && (
+                                      <div className="w-40">
+                                        <input
+                                          type="text"
+                                          value={
+                                            Object.prototype.hasOwnProperty.call(
+                                              modalNarrationDrafts,
+                                              rowKey
+                                            )
+                                              ? modalNarrationDrafts[rowKey] ?? ""
+                                              : row?.["Narration"] ?? ""
+                                          }
+                                          onChange={(event) =>
+                                            handleLedgerModalNarrationChange(
+                                              rowKey,
+                                              event.target.value
+                                            )
+                                          }
+                                          placeholder="Narration..."
+                                          className="w-full rounded border border-amber-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        />
                                       </div>
                                     )}
                                   </div>

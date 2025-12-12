@@ -238,19 +238,13 @@ const toDisplayValue = (value) => {
 };
 
 // Disallow ledger names that should be separated into a disallow sheet
-const DISALLOW_LEDGER_NAMES = [
-  "Penalty [disallow]",
-  "Repair of Vehicle [disallow]",
-  "Insurance of Vehicle [disallow]",
-  "Festival Exp. [disallow]",
-];
-
+// Any ledger name containing "[disallow]" (case-insensitive) will be treated as disallow
 // Function to filter rows with disallow ledger names
 const filterDisallowRows = (rows) => {
   if (!Array.isArray(rows)) return [];
   return rows.filter((row) => {
-    const ledgerName = String(row?.["Ledger Name"] || "").trim();
-    return DISALLOW_LEDGER_NAMES.includes(ledgerName);
+    const ledgerName = String(row?.["Ledger Name"] || "").trim().toLowerCase();
+    return ledgerName.includes("[disallow]");
   });
 };
 
@@ -318,6 +312,7 @@ const CompanyProcessor = () => {
   const [acceptCreditDrafts, setAcceptCreditDrafts] = useState({});
   const [actionDrafts, setActionDrafts] = useState({});
   const [actionReasonDrafts, setActionReasonDrafts] = useState({});
+  const [narrationDrafts, setNarrationDrafts] = useState({});
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
@@ -711,6 +706,15 @@ const CompanyProcessor = () => {
           draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
         payload.actionReason = sourceValue || null;
       }
+      // Add Narration
+      const hasNarrationDraft = Object.prototype.hasOwnProperty.call(
+        narrationDrafts,
+        rowKey
+      );
+      const narrationDraftValue = hasNarrationDraft ? narrationDrafts[rowKey] : undefined;
+      const narrationSourceValue =
+        narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
+      payload.narration = narrationSourceValue || null;
       return payload;
     },
     onUpdated: (updated) => {
@@ -749,6 +753,15 @@ const CompanyProcessor = () => {
           draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
         payload.actionReason = sourceValue || null;
       }
+      // Add Narration
+      const hasNarrationDraft = Object.prototype.hasOwnProperty.call(
+        narrationDrafts,
+        rowKey
+      );
+      const narrationDraftValue = hasNarrationDraft ? narrationDrafts[rowKey] : undefined;
+      const narrationSourceValue =
+        narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
+      payload.narration = narrationSourceValue || null;
       return payload;
     },
     onUpdated: (updated) => {
@@ -795,6 +808,15 @@ const CompanyProcessor = () => {
       const sourceValue =
         draftValue !== undefined ? draftValue : row?.["Accept Credit"] ?? "";
       payload.acceptCredit = normalizeAcceptCreditValue(sourceValue);
+      // Add Narration
+      const hasNarrationDraft = Object.prototype.hasOwnProperty.call(
+        narrationDrafts,
+        rowKey
+      );
+      const narrationDraftValue = hasNarrationDraft ? narrationDrafts[rowKey] : undefined;
+      const narrationSourceValue =
+        narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
+      payload.narration = narrationSourceValue || null;
       return payload;
     },
     onUpdated: (updated) => {
@@ -833,6 +855,15 @@ const CompanyProcessor = () => {
           draftValue !== undefined ? draftValue : row?.["Action Reason"] ?? "";
         payload.actionReason = sourceValue || null;
       }
+      // Add Narration
+      const hasNarrationDraft = Object.prototype.hasOwnProperty.call(
+        narrationDrafts,
+        rowKey
+      );
+      const narrationDraftValue = hasNarrationDraft ? narrationDrafts[rowKey] : undefined;
+      const narrationSourceValue =
+        narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
+      payload.narration = narrationSourceValue || null;
       return payload;
     },
     onUpdated: (updated) => {
@@ -998,6 +1029,60 @@ const CompanyProcessor = () => {
     ]
   );
 
+  const handleNarrationChange = useCallback(
+    (tabKey, rowKey, value) => {
+      const rowMaps = {
+        processed: processedRowMap,
+        reverseCharge: reverseChargeRowMap,
+        mismatched: mismatchedRowMap,
+        disallow: disallowRowMap,
+      };
+      const dirtySetters = {
+        processed: setProcessedExtraDirtyState,
+        reverseCharge: setReverseChargeExtraDirtyState,
+        mismatched: setMismatchedAcceptDirtyState,
+        disallow: setDisallowExtraDirtyState,
+      };
+      const targetMap = rowMaps[tabKey];
+      const baseRow = targetMap?.get(rowKey);
+      const trimmedValue = String(value || "").trim();
+      const baseValue = baseRow?.["Narration"] ?? "";
+      
+      setNarrationDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmedValue === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmedValue;
+        return next;
+      });
+      
+      const setter = dirtySetters[tabKey];
+      if (setter) {
+        const actionDirty = isActionDirtyForRow(rowKey, targetMap);
+        const acceptDirty =
+          tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
+        setter(rowKey, (trimmedValue !== baseValue) || actionDirty || acceptDirty);
+      }
+    },
+    [
+      processedRowMap,
+      reverseChargeRowMap,
+      mismatchedRowMap,
+      disallowRowMap,
+      setProcessedExtraDirtyState,
+      setReverseChargeExtraDirtyState,
+      setMismatchedAcceptDirtyState,
+      setDisallowExtraDirtyState,
+      isActionDirtyForRow,
+      isAcceptDirtyForRow,
+    ]
+  );
+
   const handleActionPropagationToggle = useCallback(
     ({ checked, rowIdx, rows, sourceRow, tabKey, rowKey }) => {
       const stateKey = `${tabKey}-${rowKey}`;
@@ -1098,6 +1183,7 @@ const CompanyProcessor = () => {
       actionReasonDrafts,
       handleActionChange,
       handleActionReasonChange,
+      narrationDrafts,
     ]
   );
 
@@ -1131,12 +1217,15 @@ const CompanyProcessor = () => {
       result.push("Accept Credit");
     }
     
-    // Always ensure Action and Action Reason are present
+    // Always ensure Action, Action Reason, and Narration are present
     if (!result.includes("Action")) {
       result.push("Action");
     }
     if (!result.includes("Action Reason")) {
       result.push("Action Reason");
+    }
+    if (!result.includes("Narration")) {
+      result.push("Narration");
     }
     
     return result;
@@ -1970,7 +2059,7 @@ const CompanyProcessor = () => {
       if (!disallowRows.length) {
         setStatus({
           type: "error",
-          message: "No rows with disallow ledger names found. Add 'Penalty [disallow]', 'Repair of Vehicle [disallow]', 'Insurance of Vehicle [disallow]', or 'Festival Exp. [disallow]' to ledger names first.",
+          message: "No rows with disallow ledger names found. Add '[disallow]' to ledger names (e.g., 'xyz [disallow]') to mark them as disallow.",
         });
         return;
       }
@@ -2640,7 +2729,7 @@ const CompanyProcessor = () => {
                   <tr>
                     {activeColumns.map((column) => {
                       // Skip the columns we're moving next to Ledger Name
-                      if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                      if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
                         return null;
                       }
                       return (
@@ -2655,9 +2744,9 @@ const CompanyProcessor = () => {
                       );
                     })}
                     {/* Add grouped header for the ledger editing fields */}
-                    {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason'].includes(col)) && (
+                    {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
                       <th 
-                        colSpan={3}
+                        colSpan={activeColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)).length}
                         className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                       >
                         Ledger Actions
@@ -2686,6 +2775,11 @@ const CompanyProcessor = () => {
                     {activeColumns.includes('Action Reason') && (
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
                         Reason
+                      </th>
+                    )}
+                    {activeColumns.includes('Narration') && (
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                        Narration
                       </th>
                     )}
                   </tr>
@@ -2946,6 +3040,32 @@ const CompanyProcessor = () => {
                                           />
                                         );
                                       })()}
+                                    </div>
+                                  )}
+                                  
+                                  {/* Narration Field */}
+                                  {activeColumns.includes('Narration') && (
+                                    <div className="w-48">
+                                      <input
+                                        type="text"
+                                        value={
+                                          Object.prototype.hasOwnProperty.call(
+                                            narrationDrafts,
+                                            rowKey
+                                          )
+                                            ? narrationDrafts[rowKey] ?? ""
+                                            : row?.["Narration"] ?? ""
+                                        }
+                                        onChange={(event) =>
+                                          handleNarrationChange(
+                                            activeTab,
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        placeholder="Narration..."
+                                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      />
                                     </div>
                                   )}
                                 </div>

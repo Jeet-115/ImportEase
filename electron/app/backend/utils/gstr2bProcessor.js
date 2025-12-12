@@ -225,6 +225,7 @@ const processRowWithMap = (row, index, gstStateMap, reverseChargeLabel = null) =
     changeMode: "Accounting Invoice",
     Action: null,
     "Action Reason": null,
+    "Narration": null,
   };
 
   const slab = determineSlab(taxableValue, igst, cgst);

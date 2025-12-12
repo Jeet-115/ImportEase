@@ -394,6 +394,19 @@ const sanitizeLedgerUpdateRows = (rows = []) =>
               return trimmed ? trimmed : null;
             })()
           : undefined,
+      narration:
+        Object.prototype.hasOwnProperty.call(row ?? {}, "narration") ||
+        Object.prototype.hasOwnProperty.call(row ?? {}, "Narration")
+          ? (() => {
+              const raw =
+                row.narration ??
+                row.Narration ??
+                null;
+              if (raw === undefined || raw === null) return null;
+              const trimmed = sanitizeString(raw);
+              return trimmed ? trimmed : null;
+            })()
+          : undefined,
     }))
     .filter(
       (row) =>
