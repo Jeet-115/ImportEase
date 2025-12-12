@@ -272,6 +272,16 @@ function normalizeActionValue(value) {
   return null;
 }
 
+function normalizeItcAvailabilityValue(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "yes" || lower === "y") return "Yes";
+  if (lower === "no" || lower === "n") return "No";
+  return null;
+}
+
 const CompanyProcessorGstr2A = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -314,6 +324,7 @@ const CompanyProcessorGstr2A = () => {
   const [actionDrafts, setActionDrafts] = useState({});
   const [actionReasonDrafts, setActionReasonDrafts] = useState({});
   const [narrationDrafts, setNarrationDrafts] = useState({});
+  const [itcAvailabilityDrafts, setItcAvailabilityDrafts] = useState({});
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
@@ -582,6 +593,25 @@ const CompanyProcessorGstr2A = () => {
     [mismatchedRowMap, acceptCreditDrafts, normalizeAcceptCreditValue]
   );
 
+  const isItcDirtyForRow = useCallback(
+    (rowKey, rowMap) => {
+      const baseRow = rowMap?.get(rowKey);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      if (!hasDraft) {
+        return false;
+      }
+      const draftValue = itcAvailabilityDrafts[rowKey];
+      return draftValue !== baseValue;
+    },
+    [itcAvailabilityDrafts]
+  );
+
   const clearActionDraftsForRows = useCallback(
     (rows = []) => {
       setActionDrafts((prev) => {
@@ -717,11 +747,24 @@ const CompanyProcessorGstr2A = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
       }
     },
   });
@@ -764,11 +807,24 @@ const CompanyProcessorGstr2A = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
       }
     },
   });
@@ -819,11 +875,24 @@ const CompanyProcessorGstr2A = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
       }
     },
   });
@@ -866,11 +935,24 @@ const CompanyProcessorGstr2A = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
       }
     },
   });
@@ -895,9 +977,10 @@ const CompanyProcessorGstr2A = () => {
         return next;
       });
       const actionDirty = isActionDirtyForRow(rowKey, mismatchedRowMap);
+      const itcDirty = isItcDirtyForRow(rowKey, mismatchedRowMap);
       setMismatchedAcceptDirtyState(
         rowKey,
-        (normalized ?? null) !== (baseValue ?? null) || actionDirty
+        (normalized ?? null) !== (baseValue ?? null) || actionDirty || itcDirty
       );
     },
     [
@@ -905,6 +988,70 @@ const CompanyProcessorGstr2A = () => {
       normalizeAcceptCreditValue,
       setMismatchedAcceptDirtyState,
       isActionDirtyForRow,
+      isItcDirtyForRow,
+    ]
+  );
+
+  const handleItcAvailabilityChange = useCallback(
+    (tabKey, rowKey, value) => {
+      const rowMaps = {
+        processed: processedRowMap,
+        reverseCharge: reverseChargeRowMap,
+        mismatched: mismatchedRowMap,
+        disallow: disallowRowMap,
+      };
+      const dirtySetters = {
+        processed: setProcessedExtraDirtyState,
+        reverseCharge: setReverseChargeExtraDirtyState,
+        mismatched: setMismatchedAcceptDirtyState,
+        disallow: setDisallowExtraDirtyState,
+      };
+
+      const targetMap = rowMaps[tabKey];
+      const baseRow = targetMap?.get(rowKey);
+      const normalized = normalizeItcAvailabilityValue(value);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+
+      setItcAvailabilityDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+
+      const setter = dirtySetters[tabKey];
+      if (setter) {
+        const actionDirty = isActionDirtyForRow(rowKey, targetMap);
+        const acceptDirty =
+          tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
+        setter(
+          rowKey,
+          (normalized ?? null) !== (baseValue ?? null) ||
+            actionDirty ||
+            acceptDirty
+        );
+      }
+    },
+    [
+      processedRowMap,
+      reverseChargeRowMap,
+      mismatchedRowMap,
+      disallowRowMap,
+      setProcessedExtraDirtyState,
+      setReverseChargeExtraDirtyState,
+      setMismatchedAcceptDirtyState,
+      setDisallowExtraDirtyState,
+      normalizeItcAvailabilityValue,
+      isActionDirtyForRow,
+      isAcceptDirtyForRow,
     ]
   );
 
@@ -960,7 +1107,13 @@ const CompanyProcessorGstr2A = () => {
       if (setter) {
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (normalized ?? null) !== (baseValue ?? null) || acceptDirty);
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        setter(
+          rowKey,
+          (normalized ?? null) !== (baseValue ?? null) ||
+            acceptDirty ||
+            itcDirty
+        );
       }
     },
     [
@@ -974,6 +1127,7 @@ const CompanyProcessorGstr2A = () => {
       setDisallowExtraDirtyState,
       isAcceptDirtyForRow,
       normalizeActionValue,
+      isItcDirtyForRow,
     ]
   );
 
@@ -1014,7 +1168,11 @@ const CompanyProcessorGstr2A = () => {
         const actionDirty = isActionDirtyForRow(rowKey, targetMap);
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (trimmedValue !== baseValue) || actionDirty || acceptDirty);
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        setter(
+          rowKey,
+          trimmedValue !== baseValue || actionDirty || acceptDirty || itcDirty
+        );
       }
     },
     [
@@ -1028,6 +1186,7 @@ const CompanyProcessorGstr2A = () => {
       setDisallowExtraDirtyState,
       isActionDirtyForRow,
       isAcceptDirtyForRow,
+      isItcDirtyForRow,
     ]
   );
 
@@ -1068,7 +1227,11 @@ const CompanyProcessorGstr2A = () => {
         const actionDirty = isActionDirtyForRow(rowKey, targetMap);
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (trimmedValue !== baseValue) || actionDirty || acceptDirty);
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        setter(
+          rowKey,
+          trimmedValue !== baseValue || actionDirty || acceptDirty || itcDirty
+        );
       }
     },
     [
@@ -1082,6 +1245,7 @@ const CompanyProcessorGstr2A = () => {
       setDisallowExtraDirtyState,
       isActionDirtyForRow,
       isAcceptDirtyForRow,
+      isItcDirtyForRow,
     ]
   );
 
@@ -1214,6 +1378,10 @@ const CompanyProcessorGstr2A = () => {
     // Start with the filtered columns
     const result = [...filteredColumns];
     
+    if (!result.includes("ITC Availability")) {
+      result.push("ITC Availability");
+    }
+
     // Only add Accept Credit for mismatched tab
     if (tabKey === 'mismatched' && !result.includes("Accept Credit")) {
       result.push("Accept Credit");
@@ -2730,7 +2898,7 @@ const CompanyProcessorGstr2A = () => {
                   <tr>
                     {activeColumns.map((column) => {
                       // Skip the columns we're moving next to Ledger Name
-                      if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                      if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                         return null;
                       }
                       return (
@@ -2745,9 +2913,9 @@ const CompanyProcessorGstr2A = () => {
                       );
                     })}
                     {/* Add grouped header for the ledger editing fields */}
-                    {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
+                    {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)) && (
                       <th 
-                        colSpan={activeColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)).length}
+                        colSpan={activeColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)).length}
                         className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                       >
                         Ledger Actions
@@ -2757,12 +2925,17 @@ const CompanyProcessorGstr2A = () => {
                   <tr className="bg-amber-50">
                     {activeColumns.map((column) => {
                       // Skip the columns we're moving next to Ledger Name in the main header
-                      if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                      if (['Accept Credit', 'Action', 'Action Reason', 'ITC Availability'].includes(column)) {
                         return null;
                       }
                       return <th key={`sub-${column}`} className="invisible"></th>;
                     })}
                     {/* Add sub-headers for the grouped fields */}
+                    {activeColumns.includes('ITC Availability') && (
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                        ITC Availability
+                      </th>
+                    )}
                     {activeColumns.includes('Accept Credit') && (
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
                         Accept Credit
@@ -2810,7 +2983,7 @@ const CompanyProcessorGstr2A = () => {
                           const cellKey = `${rowKey}-${column}`;
                           
                           // Skip the columns we're moving next to Ledger Name in the main cells
-                          if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                          if (['Accept Credit', 'Action', 'Action Reason', 'ITC Availability'].includes(column)) {
                             return null;
                           }
                           
@@ -2888,6 +3061,43 @@ const CompanyProcessorGstr2A = () => {
                                     })()}
                                   </div>
                                   
+                                  {/* ITC Availability Field */}
+                                  {activeColumns.includes('ITC Availability') && (
+                                    <div className="w-32">
+                                      <select
+                                        value={
+                                          (() => {
+                                            if (
+                                              Object.prototype.hasOwnProperty.call(
+                                                itcAvailabilityDrafts,
+                                                rowKey
+                                              )
+                                            ) {
+                                              return itcAvailabilityDrafts[rowKey] ?? "";
+                                            }
+                                            return (
+                                              normalizeItcAvailabilityValue(
+                                                row?.["ITC Availability"] ?? ""
+                                              ) ?? ""
+                                            );
+                                          })()
+                                        }
+                                        onChange={(event) =>
+                                          handleItcAvailabilityChange(
+                                            activeTab,
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      >
+                                        <option value="">ITC?</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="No">No</option>
+                                      </select>
+                                    </div>
+                                  )}
+
                                   {/* Accept Credit Field */}
                                   {activeColumns.includes('Accept Credit') && (
                                     <div className="w-28">

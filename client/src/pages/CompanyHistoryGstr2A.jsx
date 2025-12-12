@@ -131,6 +131,16 @@ const normalizeAcceptCreditValue = (value) => {
   return null;
 };
 
+const normalizeItcAvailabilityValue = (value) => {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "yes" || lower === "y") return "Yes";
+  if (lower === "no" || lower === "n") return "No";
+  return null;
+};
+
 const CompanyHistoryGstr2A = () => {
   const { companyId } = useParams();
   const location = useLocation();
@@ -171,6 +181,9 @@ const CompanyHistoryGstr2A = () => {
   const [modalActionDrafts, setModalActionDrafts] = useState({});
   const [modalActionReasonDrafts, setModalActionReasonDrafts] = useState({});
   const [modalNarrationDrafts, setModalNarrationDrafts] = useState({});
+  const [modalItcAvailabilityDrafts, setModalItcAvailabilityDrafts] = useState(
+    {}
+  );
   const [
     modalLedgerPropagationSelections,
     setModalLedgerPropagationSelections,
@@ -439,6 +452,9 @@ const CompanyHistoryGstr2A = () => {
     
     // Ensure Action, Action Reason, and Accept Credit are present
     const result = [...filteredColumns];
+    if (!result.includes("ITC Availability")) {
+      result.push("ITC Availability");
+    }
     
     // Add Accept Credit for mismatched tab if not already present
     if (
@@ -501,6 +517,18 @@ const CompanyHistoryGstr2A = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        modalItcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? modalItcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
       if (ledgerModal.activeTab === "mismatched") {
         const hasDraft = Object.prototype.hasOwnProperty.call(
           modalAcceptCreditDrafts,
@@ -524,6 +552,7 @@ const CompanyHistoryGstr2A = () => {
       setModalActionDrafts({});
       setModalActionReasonDrafts({});
       setModalNarrationDrafts({});
+      setModalItcAvailabilityDrafts({});
     },
   });
 
@@ -555,6 +584,21 @@ const CompanyHistoryGstr2A = () => {
     [ledgerModalRowMap, modalAcceptCreditDrafts, normalizeAcceptCreditValue]
   );
 
+  const isModalItcDirtyForRow = useCallback(
+    (rowKey) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+      if (!Object.prototype.hasOwnProperty.call(modalItcAvailabilityDrafts, rowKey)) {
+        return false;
+      }
+      const draftValue = modalItcAvailabilityDrafts[rowKey];
+      return (draftValue ?? null) !== (baseValue ?? null);
+    },
+    [ledgerModalRowMap, modalItcAvailabilityDrafts]
+  );
+
   const handleLedgerModalAcceptCreditChange = useCallback(
     (rowKey, value) => {
       const baseRow = ledgerModalRowMap.get(rowKey);
@@ -584,6 +628,46 @@ const CompanyHistoryGstr2A = () => {
       ledgerModalRowMap,
       normalizeAcceptCreditValue,
       isModalActionDirtyForRow,
+      setModalAcceptDirtyState,
+    ]
+  );
+
+  const handleLedgerModalItcAvailabilityChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const normalized = normalizeItcAvailabilityValue(value);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+      setModalItcAvailabilityDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+      const actionDirty = isModalActionDirtyForRow(rowKey);
+      const acceptDirty = isMismatchedModal
+        ? isModalAcceptDirtyForRow(rowKey)
+        : false;
+      setModalAcceptDirtyState(
+        rowKey,
+        (normalized ?? null) !== (baseValue ?? null) ||
+          actionDirty ||
+          acceptDirty
+      );
+    },
+    [
+      ledgerModalRowMap,
+      normalizeItcAvailabilityValue,
+      isModalActionDirtyForRow,
+      isMismatchedModal,
+      isModalAcceptDirtyForRow,
       setModalAcceptDirtyState,
     ]
   );
@@ -626,9 +710,12 @@ const CompanyHistoryGstr2A = () => {
       const acceptDirty = isMismatchedModal
         ? isModalAcceptDirtyForRow(rowKey)
         : false;
+      const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (normalized ?? null) !== (baseValue ?? null) || acceptDirty
+        (normalized ?? null) !== (baseValue ?? null) ||
+          acceptDirty ||
+          itcDirty
       );
     },
     [
@@ -636,6 +723,7 @@ const CompanyHistoryGstr2A = () => {
       setModalAcceptDirtyState,
       isModalAcceptDirtyForRow,
       isMismatchedModal,
+      isModalItcDirtyForRow,
     ]
   );
 
@@ -661,9 +749,13 @@ const CompanyHistoryGstr2A = () => {
       const acceptDirty = isMismatchedModal
         ? isModalAcceptDirtyForRow(rowKey)
         : false;
+      const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (trimmedValue !== baseValue) || actionDirty || acceptDirty
+        (trimmedValue !== baseValue) ||
+          actionDirty ||
+          acceptDirty ||
+          itcDirty
       );
     },
     [
@@ -671,6 +763,7 @@ const CompanyHistoryGstr2A = () => {
       setModalAcceptDirtyState,
       isModalActionDirtyForRow,
       isMismatchedModal,
+      isModalItcDirtyForRow,
     ]
   );
 
@@ -696,9 +789,13 @@ const CompanyHistoryGstr2A = () => {
       const acceptDirty = isMismatchedModal
         ? isModalAcceptDirtyForRow(rowKey)
         : false;
+      const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (trimmedValue !== baseValue) || actionDirty || acceptDirty
+        (trimmedValue !== baseValue) ||
+          actionDirty ||
+          acceptDirty ||
+          itcDirty
       );
     },
     [
@@ -706,6 +803,7 @@ const CompanyHistoryGstr2A = () => {
       setModalAcceptDirtyState,
       isModalActionDirtyForRow,
       isMismatchedModal,
+      isModalItcDirtyForRow,
     ]
   );
 
@@ -1581,7 +1679,7 @@ const CompanyHistoryGstr2A = () => {
                     <tr>
                       {ledgerModalColumns.map((column) => {
                         // Skip the columns we're moving next to Ledger Name
-                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                           return null;
                         }
                         return (
@@ -1596,9 +1694,9 @@ const CompanyHistoryGstr2A = () => {
                         );
                       })}
                       {/* Add grouped header for the ledger editing fields */}
-                      {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
+                      {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)) && (
                         <th 
-                          colSpan={ledgerModalColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)).length}
+                          colSpan={ledgerModalColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)).length}
                           className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                         >
                           Ledger Actions
@@ -1608,12 +1706,17 @@ const CompanyHistoryGstr2A = () => {
                     <tr className="bg-amber-50">
                       {ledgerModalColumns.map((column) => {
                         // Skip the columns we're moving next to Ledger Name in the main header
-                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                           return null;
                         }
                         return <th key={`sub-${column}`} className="invisible"></th>;
                       })}
                       {/* Add sub-headers for the grouped fields */}
+                      {ledgerModalColumns.includes('ITC Availability') && (
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                          ITC Availability
+                        </th>
+                      )}
                       {ledgerModalColumns.includes('Accept Credit') && (
                         <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                           Accept Credit
@@ -1666,7 +1769,7 @@ const CompanyHistoryGstr2A = () => {
                           {ledgerModalColumns.map((column) => {
                             const cellKey = `${rowKey}-${column}`;
                             // Skip the columns we're moving next to Ledger Name in the main cells
-                            if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                            if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                               return null;
                             }
                             return (
@@ -1833,6 +1936,44 @@ const CompanyHistoryGstr2A = () => {
                                         );
                                       })()}
                                     </div>
+
+                                  {/* ITC Availability Field */}
+                                  {ledgerModalColumns.includes('ITC Availability') && (
+                                    <div className="w-24">
+                                      <select
+                                        value={
+                                          (() => {
+                                            if (
+                                              Object.prototype.hasOwnProperty.call(
+                                                modalItcAvailabilityDrafts,
+                                                rowKey
+                                              )
+                                            ) {
+                                              return (
+                                                modalItcAvailabilityDrafts[rowKey] ?? ""
+                                              );
+                                            }
+                                            return (
+                                              normalizeItcAvailabilityValue(
+                                                row?.["ITC Availability"] ?? ""
+                                              ) ?? ""
+                                            );
+                                          })()
+                                        }
+                                        onChange={(event) =>
+                                          handleLedgerModalItcAvailabilityChange(
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      >
+                                        <option value="">ITC?</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="No">No</option>
+                                      </select>
+                                    </div>
+                                  )}
 
                                     {/* Accept Credit Field */}
                                     {ledgerModalColumns.includes('Accept Credit') && (

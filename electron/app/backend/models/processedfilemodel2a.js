@@ -40,6 +40,16 @@ export const upsert = async (payload) =>
     return { nextData, result: record };
   });
 
+const normalizeItcAvailability = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim().toLowerCase();
+  if (!trimmed) return null;
+  if (trimmed === "yes" || trimmed === "y") return "Yes";
+  if (trimmed === "no" || trimmed === "n") return "No";
+  return null;
+};
+
 const normalizeLedgerName = (value) => {
   if (value === null || value === undefined) return null;
   const trimmed = String(value).trim();
@@ -118,6 +128,10 @@ const buildUpdateMaps = (rows = []) => {
       row,
       "narration"
     );
+    const hasItcAvailability = Object.prototype.hasOwnProperty.call(
+      row,
+      "itcAvailability"
+    );
 
     const ledgerName = hasLedgerName
       ? normalizeLedgerName(row.ledgerName)
@@ -132,8 +146,18 @@ const buildUpdateMaps = (rows = []) => {
     const narration = hasNarration
       ? normalizeNarration(row.narration)
       : undefined;
+    const itcAvailability = hasItcAvailability
+      ? normalizeItcAvailability(row.itcAvailability)
+      : undefined;
 
-    if (!hasLedgerName && !hasAcceptCredit && !hasAction && !hasActionReason && !hasNarration) {
+    if (
+      !hasLedgerName &&
+      !hasAcceptCredit &&
+      !hasAction &&
+      !hasActionReason &&
+      !hasNarration &&
+      !hasItcAvailability
+    ) {
       return;
     }
 
@@ -144,7 +168,14 @@ const buildUpdateMaps = (rows = []) => {
     ) {
       const slKey = Number(row.slNo);
       if (!Number.isNaN(slKey)) {
-        bySlNo.set(slKey, { ledgerName, acceptCredit, action, actionReason, narration });
+        bySlNo.set(slKey, {
+          ledgerName,
+          acceptCredit,
+          action,
+          actionReason,
+          narration,
+          itcAvailability,
+        });
         return;
       }
     }
@@ -155,7 +186,14 @@ const buildUpdateMaps = (rows = []) => {
     ) {
       const idxKey = Number(row.index);
       if (!Number.isNaN(idxKey)) {
-        byIndex.set(idxKey, { ledgerName, acceptCredit, action, actionReason, narration });
+        byIndex.set(idxKey, {
+          ledgerName,
+          acceptCredit,
+          action,
+          actionReason,
+          narration,
+          itcAvailability,
+        });
       }
     }
   });
@@ -232,6 +270,11 @@ const applyLedgerUpdatesToCollection = (
       Object.prototype.hasOwnProperty.call(nextValue, "narration")
         ? nextValue.narration ?? null
         : undefined;
+    const targetItc =
+      nextValue &&
+      Object.prototype.hasOwnProperty.call(nextValue, "itcAvailability")
+        ? nextValue.itcAvailability ?? null
+        : undefined;
 
     let rowChanged = false;
     let updatedRow = row;
@@ -286,6 +329,13 @@ const applyLedgerUpdatesToCollection = (
       }
     }
 
+    if (targetItc !== undefined) {
+      if ((row?.["ITC Availability"] ?? null) !== targetItc) {
+        updatedRow = { ...updatedRow, "ITC Availability": targetItc };
+        rowChanged = true;
+      }
+    }
+
     if (!rowChanged) {
       return row;
     }
@@ -298,6 +348,7 @@ const applyLedgerUpdatesToCollection = (
       action: targetAction,
       actionReason: targetActionReason,
       narration: targetNarration,
+      itcAvailability: targetItc,
     });
     return updatedRow;
   });
@@ -322,7 +373,15 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
   const nextRows = [...processedRows];
 
   changedEntries.forEach(
-    ({ sourceKey, ledgerName, acceptCredit: acceptCreditValue, action, actionReason, narration }) => {
+    ({
+      sourceKey,
+      ledgerName,
+      acceptCredit: acceptCreditValue,
+      action,
+      actionReason,
+      narration,
+      itcAvailability,
+    }) => {
       if (!sourceKey || !indexMap.has(sourceKey)) return;
       const targetIdx = indexMap.get(sourceKey);
       const current = nextRows[targetIdx];
@@ -330,6 +389,7 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
       const normalizedLedger = normalizeLedgerName(ledgerName);
       const normalizedAccept = normalizeAcceptCredit(acceptCreditValue);
       const normalizedAction = normalizeAction(action);
+      const normalizedItcAvailability = normalizeItcAvailability(itcAvailability);
 
       let rowChanged = false;
       let updatedRow = current;
@@ -396,6 +456,19 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
         }
       }
 
+      if (itcAvailability !== undefined) {
+        if (
+          (current?.["ITC Availability"] ?? null) !==
+          (normalizedItcAvailability ?? null)
+        ) {
+          updatedRow = {
+            ...updatedRow,
+            "ITC Availability": normalizedItcAvailability ?? null,
+          };
+          rowChanged = true;
+        }
+      }
+
       if (rowChanged) {
         nextRows[targetIdx] = updatedRow;
         changed = true;
@@ -419,6 +492,7 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
         action: row?.Action ?? null,
         actionReason: row?.["Action Reason"] ?? null,
         narration: row?.["Narration"] ?? null,
+        itcAvailability: row?.["ITC Availability"] ?? null,
       });
     }
   });
@@ -435,6 +509,7 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
     const currentAction = row?.Action ?? null;
     const currentActionReason = row?.["Action Reason"] ?? null;
     const currentNarration = row?.["Narration"] ?? null;
+    const currentItcAvailability = row?.["ITC Availability"] ?? null;
     let rowChanged = false;
     let updatedRow = row;
 
@@ -481,6 +556,16 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
         updatedRow = {
           ...updatedRow,
           "Narration": source.narration,
+        };
+        rowChanged = true;
+      }
+    }
+
+    if (source.itcAvailability !== undefined) {
+      if (currentItcAvailability !== source.itcAvailability) {
+        updatedRow = {
+          ...updatedRow,
+          "ITC Availability": source.itcAvailability,
         };
         rowChanged = true;
       }

@@ -258,6 +258,20 @@ const sanitizeLedgerUpdateRows = (rows = []) =>
               return trimmed ? trimmed : null;
             })()
           : undefined,
+      itcAvailability:
+        Object.prototype.hasOwnProperty.call(row ?? {}, "itcAvailability") ||
+        Object.prototype.hasOwnProperty.call(row ?? {}, "ITC Availability")
+          ? (() => {
+              const raw =
+                row.itcAvailability ?? row["ITC Availability"] ?? null;
+              if (raw === undefined || raw === null) return null;
+              const trimmed = String(raw).trim().toLowerCase();
+              if (!trimmed) return null;
+              if (trimmed === "yes" || trimmed === "y") return "Yes";
+              if (trimmed === "no" || trimmed === "n") return "No";
+              return null;
+            })()
+          : undefined,
     }))
     .filter(
       (row) =>
