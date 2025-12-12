@@ -52,28 +52,14 @@ const parseNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const formatDisplayDate = (value) => {
-  if (value === null || value === undefined || value === "") return null;
-  if (value instanceof Date) {
-    const dd = String(value.getDate()).padStart(2, "0");
-    const mm = String(value.getMonth() + 1).padStart(2, "0");
-    return `${dd}/${mm}/${value.getFullYear()}`;
-  }
-  const stringValue = String(value).trim();
-  if (!stringValue) return null;
-  const parsed = new Date(stringValue);
-  if (!Number.isNaN(parsed.getTime())) {
-    const dd = String(parsed.getDate()).padStart(2, "0");
-    const mm = String(parsed.getMonth() + 1).padStart(2, "0");
-    return `${dd}/${mm}/${parsed.getFullYear()}`;
-  }
-  return stringValue;
-};
-
-const formatDate = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+const normalizeItcAvailability = (value) => {
+  if (value === null || value === undefined) return "Yes"; // Default to Yes
+  const trimmed = String(value).trim();
+  if (!trimmed) return "Yes";
+  const lower = trimmed.toLowerCase();
+  if (lower === "yes" || lower === "y") return "Yes";
+  if (lower === "no" || lower === "n") return "No";
+  return trimmed;
 };
 
 const determineSlab = (taxableValue, igst, cgst) => {
@@ -190,17 +176,6 @@ const processRowWithMap = async (row, index, gstStateMap, partyMasterMap, revers
     row?.invoiceDate !== undefined && row?.invoiceDate !== null
       ? String(row.invoiceDate).trim()
       : null;
-
-  // Normalize ITC Availability value - default to "Yes" for GSTR-2A
-  const normalizeItcAvailability = (value) => {
-    if (value === null || value === undefined) return "Yes"; // Default to Yes
-    const trimmed = String(value).trim();
-    if (!trimmed) return "Yes";
-    const lower = trimmed.toLowerCase();
-    if (lower === "yes" || lower === "y") return "Yes";
-    if (lower === "no" || lower === "n") return "No";
-    return trimmed;
-  };
 
   const base = {
     _sourceRowId: index,
@@ -409,49 +384,9 @@ export const processAndStoreDocument = async (doc) => {
   const { processedRows, mismatchedRows, reverseChargeRows, itcNoRows } =
     await processRows(rows, companyId);
 
-  // Combine existing disallow rows with ITC Availability = "No" rows
-  const existingDisallowRows = Array.isArray(doc.disallowRows) ? doc.disallowRows : [];
-  // Use a Set to track signatures and avoid duplicates
-  const getFirstValue = (row, keys) => {
-    for (const key of keys) {
-      if (row?.[key] !== undefined && row?.[key] !== null) {
-        return row[key];
-      }
-    }
-    return "";
-  };
-  
-  const buildRowSig = (row) => {
-    const refNo = getFirstValue(row, ["referenceNo", "Reference No.", "vchNo", "Vch No"]);
-    const supplier = getFirstValue(row, ["supplierName", "Supplier Name"]);
-    const gstin = getFirstValue(row, ["gstinUin", "GSTIN/UIN", "gstin", "GSTIN"]);
-    const invNo = getFirstValue(row, ["invoiceNumber", "Invoice Number"]);
-    const amount = getFirstValue(row, ["supplierAmount", "Supplier Amount", "invoiceAmount", "Invoice Amount"]);
-    return [refNo, supplier, gstin, invNo, amount]
-      .map((value) => (value !== undefined && value !== null ? String(value) : ""))
-      .join("::");
-  };
-  
-  const disallowSignatures = new Set();
-  const combinedDisallowRows = [];
-
-  // Add existing disallow rows
-  existingDisallowRows.forEach((row) => {
-    const sig = buildRowSig(row);
-    if (!disallowSignatures.has(sig)) {
-      disallowSignatures.add(sig);
-      combinedDisallowRows.push(row);
-    }
-  });
-
-  // Add ITC Availability = "No" rows (avoiding duplicates)
-  itcNoRows.forEach((row) => {
-    const sig = buildRowSig(row);
-    if (!disallowSignatures.has(sig)) {
-      disallowSignatures.add(sig);
-      combinedDisallowRows.push(row);
-    }
-  });
+  const disallowRows = processedRows
+    .filter((row) => normalizeItcAvailability(row?.["ITC Availability"]) === "No")
+    .map((row, idx) => ({ ...row, slNo: idx + 1 }));
 
   const payload = {
     _id: doc._id,
@@ -460,7 +395,7 @@ export const processAndStoreDocument = async (doc) => {
     processedRows,
     mismatchedRows,
     reverseChargeRows: reverseChargeRows || [],
-    disallowRows: combinedDisallowRows,
+    disallowRows,
     processedAt: new Date(),
   };
 

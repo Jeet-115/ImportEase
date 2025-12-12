@@ -56,6 +56,13 @@ const normalizeLedgerName = (value) => {
   return trimmed.length ? trimmed : null;
 };
 
+const normalizeSupplierName = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length ? trimmed : null;
+};
+
 const normalizeAcceptCredit = (value) => {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -132,6 +139,9 @@ const buildUpdateMaps = (rows = []) => {
       row,
       "itcAvailability"
     );
+    const hasSupplierName =
+      Object.prototype.hasOwnProperty.call(row, "supplierName") ||
+      Object.prototype.hasOwnProperty.call(row, "Supplier Name");
 
     const ledgerName = hasLedgerName
       ? normalizeLedgerName(row.ledgerName)
@@ -149,6 +159,9 @@ const buildUpdateMaps = (rows = []) => {
     const itcAvailability = hasItcAvailability
       ? normalizeItcAvailability(row.itcAvailability)
       : undefined;
+    const supplierName = hasSupplierName
+      ? normalizeSupplierName(row.supplierName ?? row["Supplier Name"])
+      : undefined;
 
     if (
       !hasLedgerName &&
@@ -156,7 +169,8 @@ const buildUpdateMaps = (rows = []) => {
       !hasAction &&
       !hasActionReason &&
       !hasNarration &&
-      !hasItcAvailability
+      !hasItcAvailability &&
+      !hasSupplierName
     ) {
       return;
     }
@@ -175,6 +189,7 @@ const buildUpdateMaps = (rows = []) => {
           actionReason,
           narration,
           itcAvailability,
+          supplierName,
         });
         return;
       }
@@ -193,6 +208,7 @@ const buildUpdateMaps = (rows = []) => {
           actionReason,
           narration,
           itcAvailability,
+          supplierName,
         });
       }
     }
@@ -275,6 +291,11 @@ const applyLedgerUpdatesToCollection = (
       Object.prototype.hasOwnProperty.call(nextValue, "itcAvailability")
         ? nextValue.itcAvailability ?? null
         : undefined;
+    const targetSupplier =
+      nextValue &&
+      Object.prototype.hasOwnProperty.call(nextValue, "supplierName")
+        ? nextValue.supplierName ?? null
+        : undefined;
 
     let rowChanged = false;
     let updatedRow = row;
@@ -336,6 +357,13 @@ const applyLedgerUpdatesToCollection = (
       }
     }
 
+    if (targetSupplier !== undefined) {
+      if ((row?.supplierName ?? null) !== targetSupplier) {
+        updatedRow = { ...updatedRow, supplierName: targetSupplier };
+        rowChanged = true;
+      }
+    }
+
     if (!rowChanged) {
       return row;
     }
@@ -349,6 +377,7 @@ const applyLedgerUpdatesToCollection = (
       actionReason: targetActionReason,
       narration: targetNarration,
       itcAvailability: targetItc,
+      supplierName: targetSupplier,
     });
     return updatedRow;
   });
@@ -381,6 +410,7 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
       actionReason,
       narration,
       itcAvailability,
+      supplierName,
     }) => {
       if (!sourceKey || !indexMap.has(sourceKey)) return;
       const targetIdx = indexMap.get(sourceKey);
@@ -390,6 +420,7 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
       const normalizedAccept = normalizeAcceptCredit(acceptCreditValue);
       const normalizedAction = normalizeAction(action);
       const normalizedItcAvailability = normalizeItcAvailability(itcAvailability);
+      const normalizedSupplierName = normalizeSupplierName(supplierName);
 
       let rowChanged = false;
       let updatedRow = current;
@@ -469,6 +500,16 @@ const applyChangesToProcessed = (processedRows = [], changedEntries = []) => {
         }
       }
 
+      if (supplierName !== undefined) {
+        if ((current?.supplierName ?? null) !== (normalizedSupplierName ?? null)) {
+          updatedRow = {
+            ...updatedRow,
+            supplierName: normalizedSupplierName ?? null,
+          };
+          rowChanged = true;
+        }
+      }
+
       if (rowChanged) {
         nextRows[targetIdx] = updatedRow;
         changed = true;
@@ -493,6 +534,7 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
         actionReason: row?.["Action Reason"] ?? null,
         narration: row?.["Narration"] ?? null,
         itcAvailability: row?.["ITC Availability"] ?? null,
+        supplierName: row?.supplierName ?? null,
       });
     }
   });
@@ -510,6 +552,7 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
     const currentActionReason = row?.["Action Reason"] ?? null;
     const currentNarration = row?.["Narration"] ?? null;
     const currentItcAvailability = row?.["ITC Availability"] ?? null;
+    const currentSupplierName = row?.supplierName ?? null;
     let rowChanged = false;
     let updatedRow = row;
 
@@ -571,6 +614,16 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
       }
     }
 
+    if (source.supplierName !== undefined) {
+      if (currentSupplierName !== source.supplierName) {
+        updatedRow = {
+          ...updatedRow,
+          supplierName: source.supplierName,
+        };
+        rowChanged = true;
+      }
+    }
+
     if (rowChanged) {
       changed = true;
       return updatedRow;
@@ -584,9 +637,12 @@ const syncCollectionFromProcessed = (processedRows = [], targetRows = []) => {
 const buildDisallowSnapshot = (processedRows = []) =>
   renumberRows(
     processedRows
-      .filter((row) =>
-        isDisallowLedger(normalizeLedgerName(row?.["Ledger Name"]))
-      )
+      .filter((row) => {
+        const fromLedger = isDisallowLedger(normalizeLedgerName(row?.["Ledger Name"]));
+        const fromItc =
+          normalizeItcAvailability(row?.["ITC Availability"]) === "No";
+        return fromLedger || fromItc;
+      })
       .map((row) => ({ ...row }))
   );
 
@@ -805,13 +861,7 @@ export const updateDisallowLedgerNames = async (id, rows = []) =>
     const processedRows = Array.isArray(target.processedRows)
       ? target.processedRows
       : [];
-    const storedDisallowRows = Array.isArray(target.disallowRows)
-      ? target.disallowRows
-      : [];
-    const effectiveDisallowRows =
-      storedDisallowRows.length > 0
-        ? storedDisallowRows
-        : buildDisallowSnapshot(processedRows);
+  const effectiveDisallowRows = buildDisallowSnapshot(processedRows);
 
     if (!effectiveDisallowRows.length) {
       console.warn(

@@ -222,13 +222,8 @@ const getNormalizedSupplierName = (row = {}) => {
   };
 };
 
-const formatDate = (value) => {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toISOString().split("T")[0];
-};
+// Preserve date exactly as provided (CSV/manual); no reformatting.
+const formatDate = (value) => (value === null || value === undefined ? "" : String(value));
 
 const toDisplayValue = (value) => {
   if (value === null || value === undefined) return "";
@@ -325,10 +320,28 @@ const CompanyProcessorGstr2A = () => {
   const [actionReasonDrafts, setActionReasonDrafts] = useState({});
   const [narrationDrafts, setNarrationDrafts] = useState({});
   const [itcAvailabilityDrafts, setItcAvailabilityDrafts] = useState({});
+const [supplierNameDrafts, setSupplierNameDrafts] = useState({});
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
   );
+
+const getSupplierPayloadValue = useCallback(
+  (rowKey, rowMap) => {
+    const hasDraft = Object.prototype.hasOwnProperty.call(
+      supplierNameDrafts,
+      rowKey
+    );
+    if (hasDraft) {
+      const draft = String(supplierNameDrafts[rowKey] ?? "").trim();
+      return draft.length ? draft : null;
+    }
+    const baseRow = rowMap?.get(rowKey);
+    const base = String(baseRow?.supplierName ?? "").trim();
+    return base.length ? base : null;
+  },
+  [supplierNameDrafts]
+);
 
   const originalRowsCache = useRef({});
   const importDocCache = useRef({});
@@ -612,6 +625,27 @@ const CompanyProcessorGstr2A = () => {
     [itcAvailabilityDrafts]
   );
 
+const isSupplierEditable = (row) => {
+  // Editable when supplier name is missing or explicitly marked as not auto-filled.
+  if (row?._supplierNameAutoFilled === false) return true;
+  const current = row?.supplierName;
+  return current === null || current === undefined || String(current).trim() === "";
+};
+
+const getSupplierBaseValue = (rowKey, rowMap) => {
+  const baseRow = rowMap?.get(rowKey);
+  if (!baseRow) return "";
+  return baseRow.supplierName ?? "";
+};
+
+const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
+  const baseValue = String(getSupplierBaseValue(rowKey, rowMap) ?? "").trim();
+  const hasDraft = Object.prototype.hasOwnProperty.call(drafts, rowKey);
+  if (!hasDraft) return false;
+  const draftValue = String(drafts[rowKey] ?? "").trim();
+  return draftValue !== baseValue;
+};
+
   const clearActionDraftsForRows = useCallback(
     (rows = []) => {
       setActionDrafts((prev) => {
@@ -759,12 +793,14 @@ const CompanyProcessorGstr2A = () => {
           ? itcDraftValue
           : row?.["ITC Availability"] ?? "";
       payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, processedRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
         setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -819,12 +855,14 @@ const CompanyProcessorGstr2A = () => {
           ? itcDraftValue
           : row?.["ITC Availability"] ?? "";
       payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, reverseChargeRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
         setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -887,12 +925,14 @@ const CompanyProcessorGstr2A = () => {
           ? itcDraftValue
           : row?.["ITC Availability"] ?? "";
       payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, mismatchedRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
         setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -947,12 +987,14 @@ const CompanyProcessorGstr2A = () => {
           ? itcDraftValue
           : row?.["ITC Availability"] ?? "";
       payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, disallowRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
         setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -1052,6 +1094,66 @@ const CompanyProcessorGstr2A = () => {
       normalizeItcAvailabilityValue,
       isActionDirtyForRow,
       isAcceptDirtyForRow,
+    ]
+  );
+
+  const handleSupplierNameChange = useCallback(
+    (tabKey, rowKey, value) => {
+      const rowMaps = {
+        processed: processedRowMap,
+        reverseCharge: reverseChargeRowMap,
+        mismatched: mismatchedRowMap,
+        disallow: disallowRowMap,
+      };
+      const dirtySetters = {
+        processed: setProcessedExtraDirtyState,
+        reverseCharge: setReverseChargeExtraDirtyState,
+        mismatched: setMismatchedAcceptDirtyState,
+        disallow: setDisallowExtraDirtyState,
+      };
+
+      const targetMap = rowMaps[tabKey];
+      const baseValue = String(getSupplierBaseValue(rowKey, targetMap) ?? "").trim();
+      const trimmed = String(value ?? "").trim();
+
+      setSupplierNameDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmed === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmed;
+        return next;
+      });
+
+      const setter = dirtySetters[tabKey];
+      if (setter) {
+        const actionDirty = isActionDirtyForRow(rowKey, targetMap);
+        const acceptDirty =
+          tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        const supplierDirty = trimmed !== baseValue;
+        setter(
+          rowKey,
+          supplierDirty || actionDirty || acceptDirty || itcDirty
+        );
+      }
+    },
+    [
+      processedRowMap,
+      reverseChargeRowMap,
+      mismatchedRowMap,
+      disallowRowMap,
+      setProcessedExtraDirtyState,
+      setReverseChargeExtraDirtyState,
+      setMismatchedAcceptDirtyState,
+      setDisallowExtraDirtyState,
+      isActionDirtyForRow,
+      isAcceptDirtyForRow,
+      isItcDirtyForRow,
     ]
   );
 
@@ -2994,7 +3096,35 @@ const CompanyProcessorGstr2A = () => {
                                 column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
                               }`}
                             >
-                              {column === "Ledger Name" ? (
+                              {column === "Supplier Name" || column === "supplierName" ? (
+                                (() => {
+                                  const editable = isSupplierEditable(row);
+                                  const supplierValue = Object.prototype.hasOwnProperty.call(
+                                    supplierNameDrafts,
+                                    rowKey
+                                  )
+                                    ? supplierNameDrafts[rowKey] ?? ""
+                                    : row?.supplierName ?? row?.["Supplier Name"] ?? "";
+                                  if (!editable) {
+                                    return <span>{toDisplayValue(supplierValue)}</span>;
+                                  }
+                                  return (
+                                    <input
+                                      type="text"
+                                      value={supplierValue}
+                                      onChange={(event) =>
+                                        handleSupplierNameChange(
+                                          activeTab,
+                                          rowKey,
+                                          event.target.value
+                                        )
+                                      }
+                                      className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      placeholder="Supplier name"
+                                    />
+                                  );
+                                })()
+                              ) : column === "Ledger Name" ? (
                                 <div className="flex items-center gap-2">
                                   <div className="flex-1">
                                     <LedgerNameDropdown
@@ -3091,7 +3221,7 @@ const CompanyProcessorGstr2A = () => {
                                         }
                                         className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                       >
-                                        <option value="">ITC?</option>
+                                        <option value="">Select</option>
                                         <option value="Yes">Yes</option>
                                         <option value="No">No</option>
                                       </select>

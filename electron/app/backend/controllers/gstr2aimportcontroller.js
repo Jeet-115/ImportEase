@@ -49,25 +49,6 @@ const sanitizeString = (value) => {
   return stringValue.length ? stringValue : null;
 };
 
-const formatDisplayDate = (value) => {
-  if (value === null || value === undefined || value === "") return null;
-  if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (parsed) {
-      const dd = String(parsed.d).padStart(2, "0");
-      const mm = String(parsed.m).padStart(2, "0");
-      return `${dd}/${mm}/${parsed.y}`;
-    }
-  }
-  if (value instanceof Date) {
-    const dd = String(value.getDate()).padStart(2, "0");
-    const mm = String(value.getMonth() + 1).padStart(2, "0");
-    return `${dd}/${mm}/${value.getFullYear()}`;
-  }
-  const stringValue = String(value).trim();
-  return stringValue.length ? stringValue : null;
-};
-
 export const parseNumber = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const normalized =
@@ -87,25 +68,9 @@ const parseTaxRatePercent = (value) => {
 };
 
 export const parseDate = (value) => {
+  // Legacy helper kept for compatibility; not used in CSV parsing for GSTR-2A.
   if (value === null || value === undefined || value === "") return null;
-  if (typeof value === "number") {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (parsed) {
-      const date = new Date(
-        Date.UTC(
-          parsed.y,
-          parsed.m - 1,
-          parsed.d,
-          parsed.H || 0,
-          parsed.M || 0,
-          parsed.S || 0
-        )
-      );
-      return date.toISOString();
-    }
-  }
-  const isoCandidate = new Date(value);
-  return Number.isNaN(isoCandidate.getTime()) ? null : isoCandidate.toISOString();
+  return String(value);
 };
 
 const isRowEmpty = (row) =>
@@ -121,7 +86,7 @@ const isRowEmpty = (row) =>
 export const parseGstr2ACSV = (csvBuffer) => {
   try {
     // Read CSV as workbook
-    const workbook = XLSX.read(csvBuffer, { type: "buffer" });
+    const workbook = XLSX.read(csvBuffer, { type: "buffer", raw: true, cellDates: false });
     const firstSheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[firstSheetName];
     
@@ -171,7 +136,10 @@ export const parseGstr2ACSV = (csvBuffer) => {
           const cell = row[colIndex];
 
           if (key === "invoiceDate" || key === "irnDate" || key === "effectiveCancellationDate") {
-            entry[key] = formatDisplayDate(cell);
+            entry[key] =
+              cell === null || cell === undefined
+                ? null
+                : String(cell);
           } else if (key === "ratePercent") {
             entry[key] = parseTaxRatePercent(cell);
           } else if (key === "invoiceValue" || key === "taxableValue" || key === "igst" || 
@@ -270,6 +238,17 @@ const sanitizeLedgerUpdateRows = (rows = []) =>
               if (trimmed === "yes" || trimmed === "y") return "Yes";
               if (trimmed === "no" || trimmed === "n") return "No";
               return null;
+            })()
+          : undefined,
+      supplierName:
+        Object.prototype.hasOwnProperty.call(row ?? {}, "supplierName") ||
+        Object.prototype.hasOwnProperty.call(row ?? {}, "Supplier Name")
+          ? (() => {
+              const raw =
+                row.supplierName ?? row["Supplier Name"] ?? null;
+              if (raw === undefined || raw === null) return null;
+              const trimmed = String(raw).trim();
+              return trimmed.length ? trimmed : null;
             })()
           : undefined,
     }))

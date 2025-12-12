@@ -141,6 +141,12 @@ const normalizeItcAvailabilityValue = (value) => {
   return null;
 };
 
+const isSupplierEditable = (row) => {
+  if (row?._supplierNameAutoFilled === false) return true;
+  const current = row?.supplierName;
+  return current === null || current === undefined || String(current).trim() === "";
+};
+
 const CompanyHistoryGstr2A = () => {
   const { companyId } = useParams();
   const location = useLocation();
@@ -184,6 +190,7 @@ const CompanyHistoryGstr2A = () => {
   const [modalItcAvailabilityDrafts, setModalItcAvailabilityDrafts] = useState(
     {}
   );
+const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
   const [
     modalLedgerPropagationSelections,
     setModalLedgerPropagationSelections,
@@ -299,6 +306,23 @@ const CompanyHistoryGstr2A = () => {
   const getProcessedRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
+  );
+
+  const getModalSupplierPayloadValue = useCallback(
+    (rowKey, rowMap) => {
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        modalSupplierNameDrafts,
+        rowKey
+      );
+      if (hasDraft) {
+        const draft = String(modalSupplierNameDrafts[rowKey] ?? "").trim();
+        return draft.length ? draft : null;
+      }
+      const baseRow = rowMap?.get(rowKey);
+      const base = String(baseRow?.supplierName ?? "").trim();
+      return base.length ? base : null;
+    },
+    [modalSupplierNameDrafts]
   );
 
   const ledgerModalProcessedRows = useMemo(
@@ -529,6 +553,7 @@ const CompanyHistoryGstr2A = () => {
           ? itcDraftValue
           : row?.["ITC Availability"] ?? "";
       payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getModalSupplierPayloadValue(rowKey, ledgerModalRowMap);
       if (ledgerModal.activeTab === "mismatched") {
         const hasDraft = Object.prototype.hasOwnProperty.call(
           modalAcceptCreditDrafts,
@@ -553,6 +578,7 @@ const CompanyHistoryGstr2A = () => {
       setModalActionReasonDrafts({});
       setModalNarrationDrafts({});
       setModalItcAvailabilityDrafts({});
+      setModalSupplierNameDrafts({});
     },
   });
 
@@ -670,6 +696,35 @@ const CompanyHistoryGstr2A = () => {
       isModalAcceptDirtyForRow,
       setModalAcceptDirtyState,
     ]
+  );
+
+  const handleLedgerModalSupplierChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const baseValue = String(baseRow?.supplierName ?? "").trim();
+      const trimmed = String(value ?? "").trim();
+      setModalSupplierNameDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmed === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmed;
+        return next;
+      });
+      const actionDirty = isModalActionDirtyForRow(rowKey);
+      const acceptDirty = isMismatchedModal
+        ? isModalAcceptDirtyForRow(rowKey)
+        : false;
+      setModalAcceptDirtyState(
+        rowKey,
+        trimmed !== baseValue || actionDirty || acceptDirty
+      );
+    },
+    [ledgerModalRowMap, isModalActionDirtyForRow, isMismatchedModal, isModalAcceptDirtyForRow, setModalAcceptDirtyState]
   );
 
   const handleLedgerModalActionChange = useCallback(
@@ -1779,7 +1834,34 @@ const CompanyHistoryGstr2A = () => {
                                   column === 'Ledger Name' ? 'pr-1 border-r-2 border-amber-200' : ''
                                 }`}
                               >
-                                {column === "Ledger Name" ? (
+                                {column === "Supplier Name" || column === "supplierName" ? (
+                                  (() => {
+                                    const editable = isSupplierEditable(row);
+                                    const supplierValue = Object.prototype.hasOwnProperty.call(
+                                      modalSupplierNameDrafts,
+                                      rowKey
+                                    )
+                                      ? modalSupplierNameDrafts[rowKey] ?? ""
+                                      : row?.supplierName ?? row?.["Supplier Name"] ?? "";
+                                    if (!editable) {
+                                      return <span>{supplierValue}</span>;
+                                    }
+                                    return (
+                                      <input
+                                        type="text"
+                                        value={supplierValue}
+                                        onChange={(event) =>
+                                          handleLedgerModalSupplierChange(
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        placeholder="Supplier name"
+                                      />
+                                    );
+                                  })()
+                                ) : column === "Ledger Name" ? (
                                   <div className="flex items-center gap-1">
                                     <div className="flex-1">
                                       <LedgerNameDropdown
@@ -1968,7 +2050,7 @@ const CompanyHistoryGstr2A = () => {
                                         }
                                         className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                       >
-                                        <option value="">ITC?</option>
+                                        <option value="">Select</option>
                                         <option value="Yes">Yes</option>
                                         <option value="No">No</option>
                                       </select>
