@@ -1750,10 +1750,10 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
       importDocCache.current[importId] = data || {};
       return rows;
     } catch (error) {
-      console.error("Failed to load original GSTR-2B rows:", error);
+      console.error("Failed to load original GSTR-2A rows:", error);
       setStatus({
         type: "error",
-        message: "Unable to load GSTR-2B data for combined download.",
+        message: "Unable to load GSTR-2A data for combined download.",
       });
       return [];
     }
@@ -2798,7 +2798,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
               </h3>
               <p className="text-sm text-slate-500">
                 {sheetRows.length} rows imported from {fileMeta.name}. If the
-                count looks wrong, go back and check the GSTR-2B file.
+                count looks wrong, go back and check the GSTR-2A file.
               </p>
             </div>
             <button
@@ -2830,7 +2830,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                 <ul className="list-disc list-inside text-xs text-slate-500 space-y-1 mt-2">
                   <li>
                     Start with <strong>Processed</strong> – normal invoices
-                    where GSTR-2B and your books agree
+                    where GSTR-2A and your books agree
                   </li>
                   <li>
                     Use <strong>Mismatched</strong> to decide Accept / Reject /

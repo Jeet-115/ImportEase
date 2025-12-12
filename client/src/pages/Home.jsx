@@ -40,7 +40,7 @@ const Home = () => {
           ImportEase – GST imports made simple for CAs
         </h1>
         <p className="text-base text-slate-600 max-w-2xl mx-auto">
-          Think of this as your assistant for GSTR-2B: first pick a company,
+          Think of this as your assistant for GSTR-2B & GSTR-2A: first pick a company,
           then upload the Excel, review suggested ledgers and actions, and
           finally download a clean purchase register for Tally. Every screen
           explains the next step so non-technical users can follow along safely.

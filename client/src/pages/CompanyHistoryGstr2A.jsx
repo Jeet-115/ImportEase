@@ -544,7 +544,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
       'state',
       'supplierState',
       'GSTR-1/1A/IFF/GSTR-5 Filing Date',
-      'GSTR-2B Taxable Value'
+      'GSTR-2A Taxable Value'
     ];
     
     // Get base columns from the first row
@@ -1017,9 +1017,9 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
       });
       const worksheet = XLSX.utils.json_to_sheet(worksheetRows);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2B");
+      XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2A");
       const filename = `${buildDownloadFilename(
-        "GSTR2BExcel",
+        "GSTR2AExcel",
         doc.companySnapshot?.companyName || company?.companyName
       )}.xlsx`;
       XLSX.writeFile(workbook, filename);
@@ -1043,7 +1043,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
       });
       setPreview({
         open: true,
-        title: "GSTR-2B Data",
+        title: "GSTR-2A Data",
         columns,
         rows: formattedRows,
       });
@@ -1625,7 +1625,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
         >
           <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
             <FiFileText className="text-amber-500" />
-            GSTR-2B Imports
+            GSTR-2A Imports
           </h2>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm text-slate-600">
@@ -1658,13 +1658,13 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onClick={() => downloadRawExcel(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiDownload /> GSTR2B Excel
+                            <FiDownload /> GSTR2A Excel
                           </button>
                           <button
                             onClick={() => openRawPreview(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiEye /> View GSTR2B
+                            <FiEye /> View GSTR2A
                           </button>
 
                           {/* 2. Edit LedgerMaster */}
