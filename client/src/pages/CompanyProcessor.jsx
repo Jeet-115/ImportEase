@@ -991,19 +991,19 @@ const CompanyProcessor = () => {
       };
       const targetMap = rowMaps[tabKey];
       const baseRow = targetMap?.get(rowKey);
-      const trimmedValue = String(value || "").trim();
+      const rawValue = value ?? "";
       const baseValue = baseRow?.["Action Reason"] ?? "";
       
       setActionReasonDrafts((prev) => {
         const next = { ...prev };
-        if (trimmedValue === baseValue) {
+        if (rawValue === baseValue) {
           if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
             delete next[rowKey];
             return next;
           }
           return prev;
         }
-        next[rowKey] = trimmedValue;
+        next[rowKey] = rawValue;
         return next;
       });
       
@@ -1012,7 +1012,7 @@ const CompanyProcessor = () => {
         const actionDirty = isActionDirtyForRow(rowKey, targetMap);
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (trimmedValue !== baseValue) || actionDirty || acceptDirty);
+        setter(rowKey, (rawValue !== baseValue) || actionDirty || acceptDirty);
       }
     },
     [
@@ -1045,19 +1045,19 @@ const CompanyProcessor = () => {
       };
       const targetMap = rowMaps[tabKey];
       const baseRow = targetMap?.get(rowKey);
-      const trimmedValue = String(value || "").trim();
+      const rawValue = value ?? "";
       const baseValue = baseRow?.["Narration"] ?? "";
       
       setNarrationDrafts((prev) => {
         const next = { ...prev };
-        if (trimmedValue === baseValue) {
+        if (rawValue === baseValue) {
           if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
             delete next[rowKey];
             return next;
           }
           return prev;
         }
-        next[rowKey] = trimmedValue;
+        next[rowKey] = rawValue;
         return next;
       });
       
@@ -1066,7 +1066,7 @@ const CompanyProcessor = () => {
         const actionDirty = isActionDirtyForRow(rowKey, targetMap);
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (trimmedValue !== baseValue) || actionDirty || acceptDirty);
+        setter(rowKey, (rawValue !== baseValue) || actionDirty || acceptDirty);
       }
     },
     [
@@ -2746,7 +2746,11 @@ const CompanyProcessor = () => {
                     {/* Add grouped header for the ledger editing fields */}
                     {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
                       <th 
-                        colSpan={activeColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)).length}
+                        colSpan={
+                          activeColumns.filter(col =>
+                            ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)
+                          ).length + 2 // apply-below columns for ledger & action
+                        }
                         className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                       >
                         Ledger Actions
@@ -2762,6 +2766,9 @@ const CompanyProcessor = () => {
                       return <th key={`sub-${column}`} className="invisible"></th>;
                     })}
                     {/* Add sub-headers for the grouped fields */}
+                    <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                      Apply Below
+                    </th>
                     {activeColumns.includes('Accept Credit') && (
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
                         Accept Credit
@@ -2772,6 +2779,9 @@ const CompanyProcessor = () => {
                         Action
                       </th>
                     )}
+                    <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                      Apply Below
+                    </th>
                     {activeColumns.includes('Action Reason') && (
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
                         Reason

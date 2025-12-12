@@ -641,18 +641,18 @@ const B2BCompanyHistory = () => {
   const handleLedgerModalActionReasonChange = useCallback(
     (rowKey, value) => {
       const baseRow = ledgerModalRowMap.get(rowKey);
-      const trimmedValue = String(value || "").trim();
+      const rawValue = value ?? "";
       const baseValue = baseRow?.["Action Reason"] ?? "";
       setModalActionReasonDrafts((prev) => {
         const next = { ...prev };
-        if (trimmedValue === baseValue) {
+        if (rawValue === baseValue) {
           if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
             delete next[rowKey];
             return next;
           }
           return prev;
         }
-        next[rowKey] = trimmedValue;
+        next[rowKey] = rawValue;
         return next;
       });
       // Mark as dirty if Action Reason changed
@@ -662,7 +662,7 @@ const B2BCompanyHistory = () => {
         : false;
       setModalAcceptDirtyState(
         rowKey,
-        (trimmedValue !== baseValue) || actionDirty || acceptDirty
+        (rawValue !== baseValue) || actionDirty || acceptDirty
       );
     },
     [
@@ -676,18 +676,18 @@ const B2BCompanyHistory = () => {
   const handleLedgerModalNarrationChange = useCallback(
     (rowKey, value) => {
       const baseRow = ledgerModalRowMap.get(rowKey);
-      const trimmedValue = String(value || "").trim();
+      const rawValue = value ?? "";
       const baseValue = baseRow?.["Narration"] ?? "";
       setModalNarrationDrafts((prev) => {
         const next = { ...prev };
-        if (trimmedValue === baseValue) {
+        if (rawValue === baseValue) {
           if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
             delete next[rowKey];
             return next;
           }
           return prev;
         }
-        next[rowKey] = trimmedValue;
+        next[rowKey] = rawValue;
         return next;
       });
       // Mark as dirty if Narration changed
@@ -697,7 +697,7 @@ const B2BCompanyHistory = () => {
         : false;
       setModalAcceptDirtyState(
         rowKey,
-        (trimmedValue !== baseValue) || actionDirty || acceptDirty
+        (rawValue !== baseValue) || actionDirty || acceptDirty
       );
     },
     [
@@ -1597,7 +1597,11 @@ const B2BCompanyHistory = () => {
                       {/* Add grouped header for the ledger editing fields */}
                       {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
                         <th 
-                          colSpan={ledgerModalColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)).length}
+                          colSpan={
+                            ledgerModalColumns.filter(col =>
+                              ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)
+                            ).length + 2 // apply-below columns for ledger & action
+                          }
                           className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                         >
                           Ledger Actions
@@ -1613,6 +1617,9 @@ const B2BCompanyHistory = () => {
                         return <th key={`sub-${column}`} className="invisible"></th>;
                       })}
                       {/* Add sub-headers for the grouped fields */}
+                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        Apply Below
+                      </th>
                       {ledgerModalColumns.includes('Accept Credit') && (
                         <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                           Accept Credit
@@ -1623,6 +1630,9 @@ const B2BCompanyHistory = () => {
                           Action
                         </th>
                       )}
+                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        Apply Below
+                      </th>
                       {ledgerModalColumns.includes('Action Reason') && (
                         <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                           Reason

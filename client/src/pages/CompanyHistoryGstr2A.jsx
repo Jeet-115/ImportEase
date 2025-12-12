@@ -785,18 +785,18 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
   const handleLedgerModalActionReasonChange = useCallback(
     (rowKey, value) => {
       const baseRow = ledgerModalRowMap.get(rowKey);
-      const trimmedValue = String(value || "").trim();
+      const rawValue = value ?? "";
       const baseValue = baseRow?.["Action Reason"] ?? "";
       setModalActionReasonDrafts((prev) => {
         const next = { ...prev };
-        if (trimmedValue === baseValue) {
+        if (rawValue === baseValue) {
           if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
             delete next[rowKey];
             return next;
           }
           return prev;
         }
-        next[rowKey] = trimmedValue;
+        next[rowKey] = rawValue;
         return next;
       });
       // Mark as dirty if Action Reason changed
@@ -807,7 +807,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
       const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (trimmedValue !== baseValue) ||
+        (rawValue !== baseValue) ||
           actionDirty ||
           acceptDirty ||
           itcDirty
@@ -825,18 +825,18 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
   const handleLedgerModalNarrationChange = useCallback(
     (rowKey, value) => {
       const baseRow = ledgerModalRowMap.get(rowKey);
-      const trimmedValue = String(value || "").trim();
+      const rawValue = value ?? "";
       const baseValue = baseRow?.["Narration"] ?? "";
       setModalNarrationDrafts((prev) => {
         const next = { ...prev };
-        if (trimmedValue === baseValue) {
+        if (rawValue === baseValue) {
           if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
             delete next[rowKey];
             return next;
           }
           return prev;
         }
-        next[rowKey] = trimmedValue;
+        next[rowKey] = rawValue;
         return next;
       });
       // Mark as dirty if Narration changed
@@ -847,7 +847,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
       const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (trimmedValue !== baseValue) ||
+        (rawValue !== baseValue) ||
           actionDirty ||
           acceptDirty ||
           itcDirty
@@ -1751,7 +1751,11 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                       {/* Add grouped header for the ledger editing fields */}
                       {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)) && (
                         <th 
-                          colSpan={ledgerModalColumns.filter(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)).length}
+                          colSpan={
+                            ledgerModalColumns.filter(col =>
+                              ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)
+                            ).length + 2 // apply-below columns for ledger & action
+                          }
                           className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
                         >
                           Ledger Actions
@@ -1767,6 +1771,9 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                         return <th key={`sub-${column}`} className="invisible"></th>;
                       })}
                       {/* Add sub-headers for the grouped fields */}
+                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        Apply Below
+                      </th>
                       {ledgerModalColumns.includes('ITC Availability') && (
                         <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                           ITC Availability
@@ -1782,6 +1789,9 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                           Action
                         </th>
                       )}
+                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        Apply Below
+                      </th>
                       {ledgerModalColumns.includes('Action Reason') && (
                         <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                           Reason
