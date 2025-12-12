@@ -11,6 +11,7 @@ import {
   FiUploadCloud,
   FiPlus,
   FiSave,
+  FiX,
 } from "react-icons/fi";
 import { fetchGSTINNumbers } from "../services/gstinnumberservices";
 import {
@@ -21,12 +22,16 @@ import {
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
   fetchImportById,
+  tallyWithGstr2a,
 } from "../services/gstr2bservice";
 import {
   createLedgerName as createLedgerNameApi,
   fetchLedgerNames,
 } from "../services/ledgernameservice";
 import { fetchPartyMasters, createPartyMaster } from "../services/partymasterservice";
+import {
+  fetchImportsByCompany as fetchGstr2AImportsByCompany,
+} from "../services/gstr2aservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import { buildCombinedWorkbook } from "../utils/buildCombinedWorkbook";
@@ -313,6 +318,14 @@ const CompanyProcessor = () => {
   const [actionDrafts, setActionDrafts] = useState({});
   const [actionReasonDrafts, setActionReasonDrafts] = useState({});
   const [narrationDrafts, setNarrationDrafts] = useState({});
+  const [tallyModal, setTallyModal] = useState({
+    open: false,
+    loading: false,
+    options: [],
+    selectedId: "",
+    submitting: false,
+    error: "",
+  });
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
@@ -2238,6 +2251,65 @@ const CompanyProcessor = () => {
       .finally(() => setProcessing(false));
   };
 
+  const openTallyModal = async () => {
+    if (!company?._id || !processedDoc) return;
+    setTallyModal((prev) => ({ ...prev, open: true, loading: true, error: "" }));
+    try {
+      const { data } = await fetchGstr2AImportsByCompany(company._id);
+      const options = (data || []).map((doc) => ({
+        id: doc._id,
+        label: `${doc.sheetName || "GSTR-2A"} - ${new Date(doc.uploadedAt || doc.processedAt || doc.createdAt || Date.now()).toLocaleString()}`,
+      }));
+      setTallyModal((prev) => ({
+        ...prev,
+        loading: false,
+        options,
+        selectedId: options[0]?.id || "",
+      }));
+    } catch (error) {
+      console.error("Failed to load GSTR-2A imports:", error);
+      setTallyModal((prev) => ({
+        ...prev,
+        loading: false,
+        error:
+          error?.response?.data?.message ||
+          "Unable to fetch GSTR-2A processed files.",
+      }));
+    }
+  };
+
+  const handleTallySubmit = async () => {
+    if (!importId || !tallyModal.selectedId) return;
+    setTallyModal((prev) => ({ ...prev, submitting: true, error: "" }));
+    try {
+      const { data } = await tallyWithGstr2a(importId, {
+        gstr2aId: tallyModal.selectedId,
+      });
+      const updated = data?.processed;
+      if (updated) {
+        setProcessedDoc(updated);
+        setStatus({
+          type: "success",
+          message: "GSTR-2B sheet updated after tallying with GSTR-2A.",
+        });
+      }
+      setTallyModal((prev) => ({
+        ...prev,
+        open: false,
+        submitting: false,
+      }));
+    } catch (error) {
+      console.error("Failed to tally with GSTR-2A:", error);
+      setTallyModal((prev) => ({
+        ...prev,
+        submitting: false,
+        error:
+          error?.response?.data?.message ||
+          "Unable to tally with GSTR-2A. Please try again.",
+      }));
+    }
+  };
+
   if (!company) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-center p-6 space-y-3">
@@ -2521,6 +2593,14 @@ const CompanyProcessor = () => {
               >
                 <FiPlayCircle />
                 {processing ? "Processing..." : "Process Sheet"}
+              </button>
+              <button
+                onClick={openTallyModal}
+                disabled={processing || !processedDoc}
+                className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+              >
+                <FiRefreshCw />
+                Tally with GSTR-2A
               </button>
             </div>
 
@@ -3094,6 +3174,90 @@ const CompanyProcessor = () => {
           </motion.section>
         ) : null}
       </section>
+
+      {tallyModal.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Tally with GSTR-2A</h3>
+                <p className="text-sm text-slate-600">
+                  Select a processed GSTR-2A file. Matching Vch No rows will be removed from this GSTR-2B sheet.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTallyModal((prev) => ({ ...prev, open: false }))}
+                className="rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                aria-label="Close"
+              >
+                <FiX />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-700">
+                Processed GSTR-2A file
+              </label>
+              <select
+                value={tallyModal.selectedId}
+                onChange={(e) =>
+                  setTallyModal((prev) => ({ ...prev, selectedId: e.target.value }))
+                }
+                disabled={tallyModal.loading || tallyModal.options.length === 0}
+                className="w-full rounded-lg border border-amber-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
+              >
+                {tallyModal.options.length === 0 ? (
+                  <option value="">No processed GSTR-2A files</option>
+                ) : (
+                  tallyModal.options.map((opt) => (
+                    <option key={opt.id} value={opt.id}>
+                      {opt.label}
+                    </option>
+                  ))
+                )}
+              </select>
+              {tallyModal.loading ? (
+                <p className="text-xs text-slate-500">Loading files...</p>
+              ) : null}
+              {tallyModal.error ? (
+                <p className="text-xs text-rose-600">{tallyModal.error}</p>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setTallyModal((prev) => ({ ...prev, open: false }))}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                disabled={tallyModal.submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleTallySubmit}
+                disabled={
+                  tallyModal.submitting ||
+                  tallyModal.loading ||
+                  !tallyModal.selectedId
+                }
+                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+              >
+                {tallyModal.submitting ? (
+                  <>
+                    <FiRefreshCw className="animate-spin" />
+                    Applying...
+                  </>
+                ) : (
+                  "Apply"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {addLedgerModal.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-[98vw] max-w-[98vw] p-6 bg-white rounded-2xl shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">

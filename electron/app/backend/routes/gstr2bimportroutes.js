@@ -9,6 +9,7 @@ import {
   updateReverseChargeLedgerNames,
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
+  tallyWithGstr2A,
   deleteImport,
   uploadMiddleware,
 } from "../controllers/gstr2bimportcontroller.js";
@@ -40,6 +41,11 @@ router.put(
   "/:id/processed/disallow/ledger-names",
   requireActiveSubscription,
   updateDisallowLedgerNames,
+);
+router.post(
+  "/:id/tally-with-gstr2a",
+  requireActiveSubscription,
+  tallyWithGstr2A,
 );
 router.delete("/:id", requireActiveSubscription, deleteImport);
 

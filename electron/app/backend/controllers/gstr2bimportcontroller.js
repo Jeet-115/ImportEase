@@ -13,7 +13,9 @@ import {
   updateMismatchedLedgerNames as updateMismatchedLedgerNamesById,
   updateDisallowLedgerNames as updateDisallowLedgerNamesById,
   deleteById as deleteProcessedById,
+  tallyWithGstr2A as tallyWithGstr2AById,
 } from "../models/processedfilemodel.js";
+import { findById as findGstr2AProcessedById } from "../models/processedfilemodel2a.js";
 import { processAndStoreDocument } from "../utils/gstr2bProcessor.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -717,6 +719,41 @@ export const deleteImport = async (req, res) => {
     console.error("deleteImport Error:", error);
     return res.status(500).json({
       message: error.message || "Failed to delete import.",
+    });
+  }
+};
+
+export const tallyWithGstr2A = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { gstr2aId } = req.body || {};
+    if (!gstr2aId) {
+      return res.status(400).json({ message: "gstr2aId is required" });
+    }
+
+    const processed2B = await findProcessedById(id);
+    if (!processed2B) {
+      return res.status(404).json({ message: "Processed GSTR-2B file not found" });
+    }
+
+    const processed2A = await findGstr2AProcessedById(gstr2aId);
+    if (!processed2A) {
+      return res.status(404).json({ message: "Processed GSTR-2A file not found" });
+    }
+
+    const updated = await tallyWithGstr2AById(id, processed2A.processedRows || []);
+    if (!updated) {
+      return res.status(500).json({ message: "Failed to update processed GSTR-2B file" });
+    }
+
+    return res.status(200).json({
+      message: "GSTR-2B sheet updated after tallying with GSTR-2A.",
+      processed: updated,
+    });
+  } catch (error) {
+    console.error("tallyWithGstr2A Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to tally GSTR-2B with GSTR-2A",
     });
   }
 };

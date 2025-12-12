@@ -788,3 +788,65 @@ export const deleteById = async (id) =>
     return { nextData, result: deleted };
   });
 
+export const tallyWithGstr2A = async (id, gstr2aProcessedRows = []) =>
+  mutateCollection(COLLECTION_KEY, (entries) => {
+    const index = entries.findIndex((entry) => entry._id === id);
+    if (index === -1) {
+      return { nextData: entries, result: null, skipWrite: true };
+    }
+
+    const target = entries[index] || {};
+    const processedRows = Array.isArray(target.processedRows)
+      ? target.processedRows
+      : [];
+    const reverseChargeRows = Array.isArray(target.reverseChargeRows)
+      ? target.reverseChargeRows
+      : [];
+    const mismatchedRows = Array.isArray(target.mismatchedRows)
+      ? target.mismatchedRows
+      : [];
+    const disallowRows = Array.isArray(target.disallowRows)
+      ? target.disallowRows
+      : [];
+
+    // Build normalized vchNo set from GSTR-2A
+    const vchSet = new Set(
+      (gstr2aProcessedRows || [])
+        .map((row) => String(row?.vchNo || "").trim().toUpperCase())
+        .filter((v) => v)
+    );
+
+    if (!vchSet.size) {
+      return { nextData: entries, result: target, skipWrite: true };
+    }
+
+    const shouldKeep = (row) => {
+      const key = String(row?.vchNo || "").trim().toUpperCase();
+      if (!key) return true;
+      return !vchSet.has(key);
+    };
+
+    const filtered = processedRows.filter(shouldKeep);
+    const filteredReverse = reverseChargeRows.filter(shouldKeep);
+    const filteredMismatched = mismatchedRows.filter(shouldKeep);
+    const filteredDisallow = disallowRows.filter(shouldKeep);
+
+    const normalizedProcessedRows = renumberRows(filtered);
+    const syncedCollections = syncDerivedCollections(normalizedProcessedRows, target, {
+      reverseChargeRows: renumberRows(filteredReverse),
+      mismatchedRows: renumberRows(filteredMismatched),
+      disallowRows: renumberRows(filteredDisallow),
+    });
+
+    const updated = {
+      ...target,
+      processedRows: normalizedProcessedRows,
+      ...syncedCollections,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextData = [...entries];
+    nextData[index] = updated;
+    return { nextData, result: updated };
+  });
+
