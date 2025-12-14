@@ -11,27 +11,24 @@ import {
   FiUploadCloud,
   FiPlus,
   FiSave,
-  FiX,
 } from "react-icons/fi";
 import { fetchGSTINNumbers } from "../services/gstinnumberservices";
 import {
-  uploadB2BSheet,
-  processGstr2bImport,
+  uploadGstr2ACSV,
+  processGstr2AImport,
   fetchProcessedFile,
+  updateProcessedLedgerNames,
   updateReverseChargeLedgerNames,
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
   fetchImportById,
-  tallyWithGstr2a,
-} from "../services/gstr2bservice";
+  appendManualRows as appendManualRowsApi,
+} from "../services/gstr2aservice";
 import {
   createLedgerName as createLedgerNameApi,
   fetchLedgerNames,
 } from "../services/ledgernameservice";
 import { fetchPartyMasters, createPartyMaster } from "../services/partymasterservice";
-import {
-  fetchImportsByCompany as fetchGstr2AImportsByCompany,
-} from "../services/gstr2aservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import { buildCombinedWorkbook } from "../utils/buildCombinedWorkbook";
@@ -226,13 +223,8 @@ const getNormalizedSupplierName = (row = {}) => {
   };
 };
 
-const formatDate = (value) => {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toISOString().split("T")[0];
-};
+// Preserve date exactly as provided (CSV/manual); no reformatting.
+const formatDate = (value) => (value === null || value === undefined ? "" : String(value));
 
 const toDisplayValue = (value) => {
   if (value === null || value === undefined) return "";
@@ -276,7 +268,17 @@ function normalizeActionValue(value) {
   return null;
 }
 
-const CompanyProcessor = () => {
+function normalizeItcAvailabilityValue(value) {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "yes" || lower === "y") return "Yes";
+  if (lower === "no" || lower === "n") return "No";
+  return null;
+}
+
+const CompanyProcessorGstr2A = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const company = location.state?.company;
@@ -318,18 +320,142 @@ const CompanyProcessor = () => {
   const [actionDrafts, setActionDrafts] = useState({});
   const [actionReasonDrafts, setActionReasonDrafts] = useState({});
   const [narrationDrafts, setNarrationDrafts] = useState({});
-  const [tallyModal, setTallyModal] = useState({
-    open: false,
-    loading: false,
-    options: [],
-    selectedId: "",
-    submitting: false,
-    error: "",
-  });
+  const [itcAvailabilityDrafts, setItcAvailabilityDrafts] = useState({});
+const [supplierNameDrafts, setSupplierNameDrafts] = useState({});
+  const [manualRows, setManualRows] = useState([
+    { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+  ]);
   const getRowKey = useCallback(
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
   );
+
+const getSupplierPayloadValue = useCallback(
+  (rowKey, rowMap) => {
+    const hasDraft = Object.prototype.hasOwnProperty.call(
+      supplierNameDrafts,
+      rowKey
+    );
+    if (hasDraft) {
+      const draft = String(supplierNameDrafts[rowKey] ?? "").trim();
+      return draft.length ? draft : null;
+    }
+    const baseRow = rowMap?.get(rowKey);
+    const base = String(baseRow?.supplierName ?? "").trim();
+    return base.length ? base : null;
+  },
+  [supplierNameDrafts]
+);
+
+  const addEmptyManualRow = useCallback(() => {
+    setManualRows((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        isNew: true,
+        reverseCharge: "No",
+        itcAvailability: "Yes",
+      },
+    ]);
+  }, []);
+
+  const handleManualRowChange = useCallback(
+    (rowId, field, value) => {
+      setManualRows((prev) => {
+        const next = prev.map((row) =>
+          row.id === rowId ? { ...row, [field]: value } : row
+        );
+        const row = next.find((r) => r.id === rowId);
+        const hasValue = Object.entries(row).some(
+          ([key, val]) =>
+            key !== "id" &&
+            key !== "isNew" &&
+            val !== null &&
+            val !== undefined &&
+            String(val).trim() !== ""
+        );
+        if (row.isNew && hasValue) {
+          row.isNew = false;
+          addEmptyManualRow();
+        }
+        // supplierName override on gstin if party master match
+        if (field === "gstin") {
+          const gstin = String(value || "").trim().toUpperCase();
+          if (gstin && partyMasters.length) {
+            const match = partyMasters.find(
+              (p) => (p.gstin || "").trim().toUpperCase() === gstin
+            );
+            if (match) {
+              row.supplierName = match.partyName || "";
+              row._supplierNameAutoFilled = true;
+            } else {
+              row._supplierNameAutoFilled = false;
+            }
+          }
+          const stateCode = gstin.slice(0, 2);
+          row.supplierState = gstStateMap[stateCode] || "";
+        }
+        return [...next];
+      });
+    },
+    [addEmptyManualRow, gstStateMap, partyMasters]
+  );
+
+  const manualHasValue = (row) =>
+    Object.entries(row).some(
+      ([key, val]) =>
+        key !== "id" &&
+        key !== "isNew" &&
+        val !== null &&
+        val !== undefined &&
+        String(val).trim() !== ""
+    );
+
+  const saveManualRows = useCallback(async () => {
+    if (!importId) return;
+    const payloadRows = manualRows
+      .filter((r) => !r.isNew && manualHasValue(r))
+      .map((r) => ({
+        date: r.date ?? null,
+        vchNo: r.vchNo ?? null,
+        supplierName: r.supplierName ?? null,
+        gstin: r.gstin ?? null,
+        state: r.state ?? null,
+        taxableValue: r.taxableValue ?? null,
+        ratePercent: r.ratePercent ?? null,
+        igst: r.igst ?? null,
+        cgst: r.cgst ?? null,
+        sgst: r.sgst ?? null,
+        cess: r.cess ?? null,
+        reverseCharge: r.reverseCharge ?? null,
+        itcAvailability: r.itcAvailability ?? null,
+        ledgerName: r.ledgerName ?? null,
+        action: r.action ?? null,
+        actionReason: r.actionReason ?? null,
+        narration: r.narration ?? null,
+      }));
+    if (!payloadRows.length) return;
+    setProcessing(true);
+    try {
+      await appendManualRowsApi(importId, { rows: payloadRows });
+      const { data } = await fetchProcessedFile(importId);
+      setProcessedDoc(data);
+      setManualRows([
+        { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+      ]);
+      setStatus({ type: "success", message: "Manual rows saved." });
+    } catch (error) {
+      console.error("Failed to save manual rows:", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to save manual rows.",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  }, [importId, manualRows, manualHasValue, fetchProcessedFile]);
 
   const originalRowsCache = useRef({});
   const importDocCache = useRef({});
@@ -594,6 +720,46 @@ const CompanyProcessor = () => {
     [mismatchedRowMap, acceptCreditDrafts, normalizeAcceptCreditValue]
   );
 
+  const isItcDirtyForRow = useCallback(
+    (rowKey, rowMap) => {
+      const baseRow = rowMap?.get(rowKey);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      if (!hasDraft) {
+        return false;
+      }
+      const draftValue = itcAvailabilityDrafts[rowKey];
+      return draftValue !== baseValue;
+    },
+    [itcAvailabilityDrafts]
+  );
+
+const isSupplierEditable = (row) => {
+  // Editable when supplier name is missing or explicitly marked as not auto-filled.
+  if (row?._supplierNameAutoFilled === false) return true;
+  const current = row?.supplierName;
+  return current === null || current === undefined || String(current).trim() === "";
+};
+
+const getSupplierBaseValue = (rowKey, rowMap) => {
+  const baseRow = rowMap?.get(rowKey);
+  if (!baseRow) return "";
+  return baseRow.supplierName ?? "";
+};
+
+const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
+  const baseValue = String(getSupplierBaseValue(rowKey, rowMap) ?? "").trim();
+  const hasDraft = Object.prototype.hasOwnProperty.call(drafts, rowKey);
+  if (!hasDraft) return false;
+  const draftValue = String(drafts[rowKey] ?? "").trim();
+  return draftValue !== baseValue;
+};
+
   const clearActionDraftsForRows = useCallback(
     (rows = []) => {
       setActionDrafts((prev) => {
@@ -703,6 +869,7 @@ const CompanyProcessor = () => {
     rows: processedRows,
     importId,
     getRowKey,
+    updateFunction: updateProcessedLedgerNames,
     getRowPayload: (row, rowKey) => {
       const payload = {
         action: getActionValueForRow(row, rowKey),
@@ -728,11 +895,26 @@ const CompanyProcessor = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, processedRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -775,11 +957,26 @@ const CompanyProcessor = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, reverseChargeRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -830,11 +1027,26 @@ const CompanyProcessor = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, mismatchedRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -877,11 +1089,26 @@ const CompanyProcessor = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        itcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? itcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getSupplierPayloadValue(rowKey, disallowRowMap);
       return payload;
     },
     onUpdated: (updated) => {
       if (updated) {
         setProcessedDoc(updated);
+        setItcAvailabilityDrafts({});
+        setSupplierNameDrafts({});
       }
     },
   });
@@ -906,9 +1133,10 @@ const CompanyProcessor = () => {
         return next;
       });
       const actionDirty = isActionDirtyForRow(rowKey, mismatchedRowMap);
+      const itcDirty = isItcDirtyForRow(rowKey, mismatchedRowMap);
       setMismatchedAcceptDirtyState(
         rowKey,
-        (normalized ?? null) !== (baseValue ?? null) || actionDirty
+        (normalized ?? null) !== (baseValue ?? null) || actionDirty || itcDirty
       );
     },
     [
@@ -916,6 +1144,130 @@ const CompanyProcessor = () => {
       normalizeAcceptCreditValue,
       setMismatchedAcceptDirtyState,
       isActionDirtyForRow,
+      isItcDirtyForRow,
+    ]
+  );
+
+  const handleItcAvailabilityChange = useCallback(
+    (tabKey, rowKey, value) => {
+      const rowMaps = {
+        processed: processedRowMap,
+        reverseCharge: reverseChargeRowMap,
+        mismatched: mismatchedRowMap,
+        disallow: disallowRowMap,
+      };
+      const dirtySetters = {
+        processed: setProcessedExtraDirtyState,
+        reverseCharge: setReverseChargeExtraDirtyState,
+        mismatched: setMismatchedAcceptDirtyState,
+        disallow: setDisallowExtraDirtyState,
+      };
+
+      const targetMap = rowMaps[tabKey];
+      const baseRow = targetMap?.get(rowKey);
+      const normalized = normalizeItcAvailabilityValue(value);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+
+      setItcAvailabilityDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+
+      const setter = dirtySetters[tabKey];
+      if (setter) {
+        const actionDirty = isActionDirtyForRow(rowKey, targetMap);
+        const acceptDirty =
+          tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
+        setter(
+          rowKey,
+          (normalized ?? null) !== (baseValue ?? null) ||
+            actionDirty ||
+            acceptDirty
+        );
+      }
+    },
+    [
+      processedRowMap,
+      reverseChargeRowMap,
+      mismatchedRowMap,
+      disallowRowMap,
+      setProcessedExtraDirtyState,
+      setReverseChargeExtraDirtyState,
+      setMismatchedAcceptDirtyState,
+      setDisallowExtraDirtyState,
+      normalizeItcAvailabilityValue,
+      isActionDirtyForRow,
+      isAcceptDirtyForRow,
+    ]
+  );
+
+  const handleSupplierNameChange = useCallback(
+    (tabKey, rowKey, value) => {
+      const rowMaps = {
+        processed: processedRowMap,
+        reverseCharge: reverseChargeRowMap,
+        mismatched: mismatchedRowMap,
+        disallow: disallowRowMap,
+      };
+      const dirtySetters = {
+        processed: setProcessedExtraDirtyState,
+        reverseCharge: setReverseChargeExtraDirtyState,
+        mismatched: setMismatchedAcceptDirtyState,
+        disallow: setDisallowExtraDirtyState,
+      };
+
+      const targetMap = rowMaps[tabKey];
+      const baseValue = String(getSupplierBaseValue(rowKey, targetMap) ?? "").trim();
+      const trimmed = String(value ?? "").trim();
+
+      setSupplierNameDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmed === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmed;
+        return next;
+      });
+
+      const setter = dirtySetters[tabKey];
+      if (setter) {
+        const actionDirty = isActionDirtyForRow(rowKey, targetMap);
+        const acceptDirty =
+          tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        const supplierDirty = trimmed !== baseValue;
+        setter(
+          rowKey,
+          supplierDirty || actionDirty || acceptDirty || itcDirty
+        );
+      }
+    },
+    [
+      processedRowMap,
+      reverseChargeRowMap,
+      mismatchedRowMap,
+      disallowRowMap,
+      setProcessedExtraDirtyState,
+      setReverseChargeExtraDirtyState,
+      setMismatchedAcceptDirtyState,
+      setDisallowExtraDirtyState,
+      isActionDirtyForRow,
+      isAcceptDirtyForRow,
+      isItcDirtyForRow,
     ]
   );
 
@@ -971,7 +1323,13 @@ const CompanyProcessor = () => {
       if (setter) {
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (normalized ?? null) !== (baseValue ?? null) || acceptDirty);
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        setter(
+          rowKey,
+          (normalized ?? null) !== (baseValue ?? null) ||
+            acceptDirty ||
+            itcDirty
+        );
       }
     },
     [
@@ -985,6 +1343,7 @@ const CompanyProcessor = () => {
       setDisallowExtraDirtyState,
       isAcceptDirtyForRow,
       normalizeActionValue,
+      isItcDirtyForRow,
     ]
   );
 
@@ -1025,7 +1384,11 @@ const CompanyProcessor = () => {
         const actionDirty = isActionDirtyForRow(rowKey, targetMap);
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (rawValue !== baseValue) || actionDirty || acceptDirty);
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        setter(
+          rowKey,
+          rawValue !== baseValue || actionDirty || acceptDirty || itcDirty
+        );
       }
     },
     [
@@ -1039,6 +1402,7 @@ const CompanyProcessor = () => {
       setDisallowExtraDirtyState,
       isActionDirtyForRow,
       isAcceptDirtyForRow,
+      isItcDirtyForRow,
     ]
   );
 
@@ -1079,7 +1443,11 @@ const CompanyProcessor = () => {
         const actionDirty = isActionDirtyForRow(rowKey, targetMap);
         const acceptDirty =
           tabKey === "mismatched" ? isAcceptDirtyForRow(rowKey) : false;
-        setter(rowKey, (rawValue !== baseValue) || actionDirty || acceptDirty);
+        const itcDirty = isItcDirtyForRow(rowKey, targetMap);
+        setter(
+          rowKey,
+          rawValue !== baseValue || actionDirty || acceptDirty || itcDirty
+        );
       }
     },
     [
@@ -1093,6 +1461,7 @@ const CompanyProcessor = () => {
       setDisallowExtraDirtyState,
       isActionDirtyForRow,
       isAcceptDirtyForRow,
+      isItcDirtyForRow,
     ]
   );
 
@@ -1206,7 +1575,7 @@ const CompanyProcessor = () => {
       'state',
       'supplierState',
       'GSTR-1/1A/IFF/GSTR-5 Filing Date',
-      'GSTR-2B Taxable Value'
+      'GSTR-2A Taxable Value'
     ];
     
     // Create a set of columns to move for faster lookup
@@ -1225,6 +1594,10 @@ const CompanyProcessor = () => {
     // Start with the filtered columns
     const result = [...filteredColumns];
     
+    if (!result.includes("ITC Availability")) {
+      result.push("ITC Availability");
+    }
+
     // Only add Accept Credit for mismatched tab
     if (tabKey === 'mismatched' && !result.includes("Accept Credit")) {
       result.push("Accept Credit");
@@ -1377,10 +1750,10 @@ const CompanyProcessor = () => {
       importDocCache.current[importId] = data || {};
       return rows;
     } catch (error) {
-      console.error("Failed to load original GSTR-2B rows:", error);
+      console.error("Failed to load original GSTR-2A rows:", error);
       setStatus({
         type: "error",
-        message: "Unable to load GSTR-2B data for combined download.",
+        message: "Unable to load GSTR-2A data for combined download.",
       });
       return [];
     }
@@ -1658,7 +2031,7 @@ const CompanyProcessor = () => {
       telephone: company.telephone,
     };
 
-    uploadB2BSheet(file, {
+    uploadGstr2ACSV(file, {
       companyId: company._id,
       companySnapshot: snapshot,
     })
@@ -1673,12 +2046,12 @@ const CompanyProcessor = () => {
         setProcessedDoc(null);
         setStatus({
           type: "success",
-          message: `Imported ${data.rows?.length || 0} rows from B2B sheet.`,
+          message: `Imported ${data.rows?.length || 0} rows from GSTR-2A CSV.`,
         });
         setDownloadsUnlocked(false);
       })
       .catch((error) => {
-        console.error("Failed to upload B2B sheet:", error);
+        console.error("Failed to upload GSTR-2A CSV:", error);
         setStatus({
           type: "error",
           message:
@@ -1836,11 +2209,11 @@ const CompanyProcessor = () => {
     });
   };
 
-  const handleDownloadGstr2BExcel = () => {
+  const handleDownloadGstr2AExcel = () => {
     if (!sheetRows.length) {
       setStatus({
         type: "error",
-        message: "Upload a B2B sheet before downloading.",
+        message: "Upload a GSTR-2A CSV before downloading.",
       });
       return;
     }
@@ -1855,13 +2228,13 @@ const CompanyProcessor = () => {
 
     const worksheet = XLSX.utils.json_to_sheet(worksheetRows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2B");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2A");
     const filename = `${buildDownloadFilename(
-      "GSTR2BExcel",
+      "GSTR2AExcel",
       company?.companyName
     )}.xlsx`;
     XLSX.writeFile(workbook, filename);
-    setStatus({ type: "success", message: "GSTR-2B Excel downloaded." });
+    setStatus({ type: "success", message: "GSTR-2A Excel downloaded." });
   };
 
   const ensureProcessedDoc = async () => {
@@ -2230,7 +2603,7 @@ const CompanyProcessor = () => {
       return;
     }
     setProcessing(true);
-    processGstr2bImport(importId)
+    processGstr2AImport(importId)
       .then(({ data }) => {
         setProcessedDoc(data.processed || null);
         setDownloadsUnlocked(true);
@@ -2249,65 +2622,6 @@ const CompanyProcessor = () => {
         });
       })
       .finally(() => setProcessing(false));
-  };
-
-  const openTallyModal = async () => {
-    if (!company?._id || !processedDoc) return;
-    setTallyModal((prev) => ({ ...prev, open: true, loading: true, error: "" }));
-    try {
-      const { data } = await fetchGstr2AImportsByCompany(company._id);
-      const options = (data || []).map((doc) => ({
-        id: doc._id,
-        label: `${doc.sheetName || "GSTR-2A"} - ${new Date(doc.uploadedAt || doc.processedAt || doc.createdAt || Date.now()).toLocaleString()}`,
-      }));
-      setTallyModal((prev) => ({
-        ...prev,
-        loading: false,
-        options,
-        selectedId: options[0]?.id || "",
-      }));
-    } catch (error) {
-      console.error("Failed to load GSTR-2A imports:", error);
-      setTallyModal((prev) => ({
-        ...prev,
-        loading: false,
-        error:
-          error?.response?.data?.message ||
-          "Unable to fetch GSTR-2A processed files.",
-      }));
-    }
-  };
-
-  const handleTallySubmit = async () => {
-    if (!importId || !tallyModal.selectedId) return;
-    setTallyModal((prev) => ({ ...prev, submitting: true, error: "" }));
-    try {
-      const { data } = await tallyWithGstr2a(importId, {
-        gstr2aId: tallyModal.selectedId,
-      });
-      const updated = data?.processed;
-      if (updated) {
-        setProcessedDoc(updated);
-        setStatus({
-          type: "success",
-          message: "GSTR-2B sheet updated after tallying with GSTR-2A.",
-        });
-      }
-      setTallyModal((prev) => ({
-        ...prev,
-        open: false,
-        submitting: false,
-      }));
-    } catch (error) {
-      console.error("Failed to tally with GSTR-2A:", error);
-      setTallyModal((prev) => ({
-        ...prev,
-        submitting: false,
-        error:
-          error?.response?.data?.message ||
-          "Unable to tally with GSTR-2A. Please try again.",
-      }));
-    }
   };
 
   if (!company) {
@@ -2360,7 +2674,7 @@ const CompanyProcessor = () => {
             <p className="text-sm text-slate-600">{readOnlyMessage}</p>
             <p className="text-sm text-slate-600">
               You can still open Review History to download past Excel/JSON
-              files for this company. Renew your plan to upload new GSTR-2B
+              files for this company. Renew your plan to upload new GSTR-2A
               files or edit ledger mappings.
             </p>
             <div className="flex flex-wrap gap-3">
@@ -2416,7 +2730,7 @@ const CompanyProcessor = () => {
             ) : null}
           </div>
           <p className="text-sm text-slate-600 mt-2">
-            Upload the GSTR-2B Excel for this client, then use the tabs below to
+            Upload the GSTR-2A CSV for this client, then use the tabs below to
             map &quot;Ledger Name&quot;, mark Accept/Reject/Pending actions, and finally
             download a ready-to-import Excel for Tally.
           </p>
@@ -2441,22 +2755,21 @@ const CompanyProcessor = () => {
         >
           <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
             <FiUploadCloud className="text-amber-500" />
-            Step A – Upload GSTR-2B Excel
+            Step A – Upload GSTR-2A CSV
           </h2>
           <p className="text-sm text-slate-600">
-            Start by selecting the exact GSTR-2B Excel you downloaded from the
-            portal for this client. ImportEase will read only the required
-            sheets.
+            Start by selecting the exact GSTR-2A CSV you downloaded from the
+            portal for this client. ImportEase will read the CSV file.
           </p>
           <ul className="list-disc list-inside text-xs text-slate-500 space-y-1">
-            <li>Accepted formats: .xlsx, .xls</li>
+            <li>Accepted formats: .csv</li>
             <li>Use one file per month / return period</li>
             <li>If you picked the wrong file, simply upload again to replace it</li>
           </ul>
           <label className="mt-4 flex h-36 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/50 text-amber-700 transition hover:bg-amber-50">
             <input
               type="file"
-              accept=".xlsx,.xls"
+              accept=".csv"
               className="hidden"
               onChange={handleFileChange}
             />
@@ -2485,7 +2798,7 @@ const CompanyProcessor = () => {
               </h3>
               <p className="text-sm text-slate-500">
                 {sheetRows.length} rows imported from {fileMeta.name}. If the
-                count looks wrong, go back and check the GSTR-2B file.
+                count looks wrong, go back and check the GSTR-2A file.
               </p>
             </div>
             <button
@@ -2517,7 +2830,7 @@ const CompanyProcessor = () => {
                 <ul className="list-disc list-inside text-xs text-slate-500 space-y-1 mt-2">
                   <li>
                     Start with <strong>Processed</strong> – normal invoices
-                    where GSTR-2B and your books agree
+                    where GSTR-2A and your books agree
                   </li>
                   <li>
                     Use <strong>Mismatched</strong> to decide Accept / Reject /
@@ -2532,11 +2845,11 @@ const CompanyProcessor = () => {
 
               <div className="flex flex-wrap gap-3">
               <button
-                onClick={handleDownloadGstr2BExcel}
+                onClick={handleDownloadGstr2AExcel}
                 className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-slate-800"
               >
                 <FiDownload />
-                Download GSTR-2B Excel
+                Download GSTR-2A Excel
               </button>
               <button
               onClick={handleDownloadProcessedExcel}
@@ -2593,14 +2906,6 @@ const CompanyProcessor = () => {
               >
                 <FiPlayCircle />
                 {processing ? "Processing..." : "Process Sheet"}
-              </button>
-              <button
-                onClick={openTallyModal}
-                disabled={processing || !processedDoc}
-                className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
-              >
-                <FiRefreshCw />
-                Tally with GSTR-2A
               </button>
             </div>
 
@@ -2809,7 +3114,7 @@ const CompanyProcessor = () => {
                   <tr>
                     {activeColumns.map((column) => {
                       // Skip the columns we're moving next to Ledger Name
-                      if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                      if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                         return null;
                       }
                       return (
@@ -2824,11 +3129,11 @@ const CompanyProcessor = () => {
                       );
                     })}
                     {/* Add grouped header for the ledger editing fields */}
-                    {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
+                    {activeColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)) && (
                       <th 
                         colSpan={
                           activeColumns.filter(col =>
-                            ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)
+                            ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)
                           ).length + 2 // apply-below columns for ledger & action
                         }
                         className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
@@ -2840,7 +3145,7 @@ const CompanyProcessor = () => {
                   <tr className="bg-amber-50">
                     {activeColumns.map((column) => {
                       // Skip the columns we're moving next to Ledger Name in the main header
-                      if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                      if (['Accept Credit', 'Action', 'Action Reason', 'ITC Availability'].includes(column)) {
                         return null;
                       }
                       return <th key={`sub-${column}`} className="invisible"></th>;
@@ -2849,6 +3154,11 @@ const CompanyProcessor = () => {
                     <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
                       Apply Below
                     </th>
+                    {activeColumns.includes('ITC Availability') && (
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                        ITC Availability
+                      </th>
+                    )}
                     {activeColumns.includes('Accept Credit') && (
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
                         Accept Credit
@@ -2899,7 +3209,7 @@ const CompanyProcessor = () => {
                           const cellKey = `${rowKey}-${column}`;
                           
                           // Skip the columns we're moving next to Ledger Name in the main cells
-                          if (['Accept Credit', 'Action', 'Action Reason'].includes(column)) {
+                          if (['Accept Credit', 'Action', 'Action Reason', 'ITC Availability'].includes(column)) {
                             return null;
                           }
                           
@@ -2910,7 +3220,35 @@ const CompanyProcessor = () => {
                                 column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
                               }`}
                             >
-                              {column === "Ledger Name" ? (
+                              {column === "Supplier Name" || column === "supplierName" ? (
+                                (() => {
+                                  const editable = isSupplierEditable(row);
+                                  const supplierValue = Object.prototype.hasOwnProperty.call(
+                                    supplierNameDrafts,
+                                    rowKey
+                                  )
+                                    ? supplierNameDrafts[rowKey] ?? ""
+                                    : row?.supplierName ?? row?.["Supplier Name"] ?? "";
+                                  if (!editable) {
+                                    return <span>{toDisplayValue(supplierValue)}</span>;
+                                  }
+                                  return (
+                                    <input
+                                      type="text"
+                                      value={supplierValue}
+                                      onChange={(event) =>
+                                        handleSupplierNameChange(
+                                          activeTab,
+                                          rowKey,
+                                          event.target.value
+                                        )
+                                      }
+                                      className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      placeholder="Supplier name"
+                                    />
+                                  );
+                                })()
+                              ) : column === "Ledger Name" ? (
                                 <div className="flex items-center gap-2">
                                   <div className="flex-1">
                                     <LedgerNameDropdown
@@ -2977,6 +3315,43 @@ const CompanyProcessor = () => {
                                     })()}
                                   </div>
                                   
+                                  {/* ITC Availability Field */}
+                                  {activeColumns.includes('ITC Availability') && (
+                                    <div className="w-32">
+                                      <select
+                                        value={
+                                          (() => {
+                                            if (
+                                              Object.prototype.hasOwnProperty.call(
+                                                itcAvailabilityDrafts,
+                                                rowKey
+                                              )
+                                            ) {
+                                              return itcAvailabilityDrafts[rowKey] ?? "";
+                                            }
+                                            return (
+                                              normalizeItcAvailabilityValue(
+                                                row?.["ITC Availability"] ?? ""
+                                              ) ?? ""
+                                            );
+                                          })()
+                                        }
+                                        onChange={(event) =>
+                                          handleItcAvailabilityChange(
+                                            activeTab,
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      >
+                                        <option value="">Select</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="No">No</option>
+                                      </select>
+                                    </div>
+                                  )}
+
                                   {/* Accept Credit Field */}
                                   {activeColumns.includes('Accept Credit') && (
                                     <div className="w-28">
@@ -3174,90 +3549,265 @@ const CompanyProcessor = () => {
           </motion.section>
         ) : null}
       </section>
-
-      {tallyModal.open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Tally with GSTR-2A</h3>
-                <p className="text-sm text-slate-600">
-                  Select a processed GSTR-2A file. Matching Vch No rows will be removed from this GSTR-2B sheet.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setTallyModal((prev) => ({ ...prev, open: false }))}
-                className="rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
-                aria-label="Close"
-              >
-                <FiX />
-              </button>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-slate-700">
-                Processed GSTR-2A file
-              </label>
-              <select
-                value={tallyModal.selectedId}
-                onChange={(e) =>
-                  setTallyModal((prev) => ({ ...prev, selectedId: e.target.value }))
-                }
-                disabled={tallyModal.loading || tallyModal.options.length === 0}
-                className="w-full rounded-lg border border-amber-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
-              >
-                {tallyModal.options.length === 0 ? (
-                  <option value="">No processed GSTR-2A files</option>
-                ) : (
-                  tallyModal.options.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.label}
-                    </option>
-                  ))
-                )}
-              </select>
-              {tallyModal.loading ? (
-                <p className="text-xs text-slate-500">Loading files...</p>
-              ) : null}
-              {tallyModal.error ? (
-                <p className="text-xs text-rose-600">{tallyModal.error}</p>
-              ) : null}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setTallyModal((prev) => ({ ...prev, open: false }))}
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                disabled={tallyModal.submitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleTallySubmit}
-                disabled={
-                  tallyModal.submitting ||
-                  tallyModal.loading ||
-                  !tallyModal.selectedId
-                }
-                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
-              >
-                {tallyModal.submitting ? (
-                  <>
-                    <FiRefreshCw className="animate-spin" />
-                    Applying...
-                  </>
-                ) : (
-                  "Apply"
-                )}
-              </button>
-            </div>
-          </div>
+      {/* Manual row entry - GSTR-2A only */}
+      <section className="mt-6 mb-20">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-slate-800">
+            Manual Rows (GSTR-2A)
+          </h3>
+          <button
+            type="button"
+            onClick={saveManualRows}
+            className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+            disabled={processing}
+          >
+            Save Manual Rows
+          </button>
         </div>
-      ) : null}
-
+        <div className="overflow-auto rounded-xl border border-amber-100">
+          <table className="min-w-[1600px] text-xs text-slate-700 table-fixed mb-20">
+            <thead className="bg-amber-50">
+              <tr>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Date</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Vch No</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Supplier Name</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">GSTIN</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">State</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Supplier State</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Taxable Value</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Rate %</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">IGST</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">CGST</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">SGST/UTGST</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Cess</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Reverse Charge</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">ITC Availability</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Ledger Name</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Action</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Action Reason</th>
+                <th className="px-2 py-2 text-left font-semibold whitespace-nowrap">Narration</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-amber-50">
+              {manualRows.map((row) => (
+                <tr key={row.id} className="hover:bg-amber-50/40">
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.date ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "date", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.vchNo ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "vchNo", e.target.value)
+                      }
+                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.supplierName ?? ""}
+                      onChange={(e) =>
+                        row._supplierNameAutoFilled
+                          ? null
+                          : handleManualRowChange(row.id, "supplierName", e.target.value)
+                      }
+                      readOnly={row._supplierNameAutoFilled}
+                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                      placeholder={row._supplierNameAutoFilled ? "Auto-filled" : "Supplier Name"}
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.gstin ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "gstin", e.target.value)
+                      }
+                      className="w-32 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.state ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "state", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2 text-slate-500">
+                    {row.supplierState || ""}
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.taxableValue ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "taxableValue", e.target.value)
+                      }
+                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.ratePercent ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "ratePercent", e.target.value)
+                      }
+                      className="w-16 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.igst ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "igst", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.cgst ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "cgst", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.sgst ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "sgst", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="number"
+                      value={row.cess ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "cess", e.target.value)
+                      }
+                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <select
+                      value={row.reverseCharge ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "reverseCharge", e.target.value)
+                      }
+                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </td>
+                  <td className="px-2 py-2">
+                    <select
+                      value={row.itcAvailability ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "itcAvailability", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    >
+                      <option value="">Select</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </td>
+                  <td className="px-2 py-2 overflow-visible align-top">
+                    <div className="w-48">
+                      <LedgerNameDropdown
+                        value={row.ledgerName ?? ""}
+                        options={ledgerNames}
+                        onChange={(newValue) =>
+                          handleManualRowChange(row.id, "ledgerName", newValue)
+                        }
+                        onAddNew={async (newName) => {
+                          try {
+                            await createLedgerNameApi({ name: newName });
+                            await loadLedgerNames();
+                            handleManualRowChange(row.id, "ledgerName", newName);
+                            setStatus({
+                              type: "success",
+                              message: "Ledger name added.",
+                            });
+                          } catch (error) {
+                            console.error("Failed to add ledger name:", error);
+                            setStatus({
+                              type: "error",
+                              message:
+                                error?.response?.data?.message ||
+                                "Unable to add ledger name.",
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-2 py-2 overflow-visible align-top">
+                  <div className="relative z-10 w-28">
+                    <select
+                      value={row.action ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "action", e.target.value)
+                      }
+                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                    >
+                      <option value="">Action</option>
+                      {ACTION_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    </div>
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.actionReason ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "actionReason", e.target.value)
+                      }
+                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <input
+                      type="text"
+                      value={row.narration ?? ""}
+                      onChange={(e) =>
+                        handleManualRowChange(row.id, "narration", e.target.value)
+                      }
+                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
       {addLedgerModal.open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-[98vw] max-w-[98vw] p-6 bg-white rounded-2xl shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">
@@ -3309,5 +3859,5 @@ const CompanyProcessor = () => {
   );
 };
 
-export default CompanyProcessor;
+export default CompanyProcessorGstr2A;
 

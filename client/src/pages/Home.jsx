@@ -40,7 +40,7 @@ const Home = () => {
           ImportEase – GST imports made simple for CAs
         </h1>
         <p className="text-base text-slate-600 max-w-2xl mx-auto">
-          Think of this as your assistant for GSTR-2B: first pick a company,
+          Think of this as your assistant for GSTR-2B & GSTR-2A: first pick a company,
           then upload the Excel, review suggested ledgers and actions, and
           finally download a clean purchase register for Tally. Every screen
           explains the next step so non-technical users can follow along safely.
@@ -55,15 +55,27 @@ const Home = () => {
             },
             {
               icon: <FiLayers />,
-              title: "Select & Process",
+              title: "Select & Process (GSTR-2B)",
               text: "For a selected client, upload GSTR-2B and prepare the purchase register step by step.",
               action: () => navigate("/company-selector"),
             },
             {
               icon: <FiClipboard />,
-              title: "Review History",
+              title: "Review History (GSTR-2B)",
               text: "Open previous runs for a client, re-download Excel, or fix ledgers later.",
               action: () => navigate("/b2b-history"),
+            },
+            {
+              icon: <FiLayers />,
+              title: "Select & Process (GSTR-2A)",
+              text: "For a selected client, upload GSTR-2A CSV and prepare the purchase register step by step.",
+              action: () => navigate("/company-selector-gstr2a"),
+            },
+            {
+              icon: <FiClipboard />,
+              title: "Review History (GSTR-2A)",
+              text: "Open previous GSTR-2A runs for a client, re-download Excel, or fix ledgers later.",
+              action: () => navigate("/gstr2a-history"),
             },
             {
               icon: <FiBook />,

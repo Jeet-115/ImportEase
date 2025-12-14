@@ -27,15 +27,19 @@ import {
   fetchImportById,
   fetchImportsByCompany,
   fetchProcessedFile,
+  updateProcessedLedgerNames,
   updateReverseChargeLedgerNames,
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
   deleteImport,
-} from "../services/gstr2bservice";
+  appendManualRows as appendManualRowsApi,
+} from "../services/gstr2aservice";
 import {
   createLedgerName as createLedgerNameApi,
   fetchLedgerNames,
 } from "../services/ledgernameservice";
+import { fetchGSTINNumbers } from "../services/gstinnumberservices";
+import { fetchPartyMasters } from "../services/partymasterservice";
 import { gstr2bHeaders } from "../utils/gstr2bHeaders";
 import { sanitizeFileName } from "../utils/fileUtils";
 import { buildCombinedWorkbook } from "../utils/buildCombinedWorkbook";
@@ -130,7 +134,23 @@ const normalizeAcceptCreditValue = (value) => {
   return null;
 };
 
-const B2BCompanyHistory = () => {
+const normalizeItcAvailabilityValue = (value) => {
+  if (value === null || value === undefined) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower === "yes" || lower === "y") return "Yes";
+  if (lower === "no" || lower === "n") return "No";
+  return null;
+};
+
+const isSupplierEditable = (row) => {
+  if (row?._supplierNameAutoFilled === false) return true;
+  const current = row?.supplierName;
+  return current === null || current === undefined || String(current).trim() === "";
+};
+
+const CompanyHistoryGstr2A = () => {
   const { companyId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -170,6 +190,16 @@ const B2BCompanyHistory = () => {
   const [modalActionDrafts, setModalActionDrafts] = useState({});
   const [modalActionReasonDrafts, setModalActionReasonDrafts] = useState({});
   const [modalNarrationDrafts, setModalNarrationDrafts] = useState({});
+  const [modalItcAvailabilityDrafts, setModalItcAvailabilityDrafts] = useState(
+    {}
+  );
+const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
+  const [gstStateMap, setGstStateMap] = useState({});
+  const [partyMasters, setPartyMasters] = useState([]);
+  const [manualRows, setManualRows] = useState([
+    { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+  ]);
+  const [savingManualRows, setSavingManualRows] = useState(false);
   const [
     modalLedgerPropagationSelections,
     setModalLedgerPropagationSelections,
@@ -248,12 +278,37 @@ const B2BCompanyHistory = () => {
     loadLedgerNames();
   }, [loadLedgerNames]);
 
+  // Load GST state map and party masters for supplier overrides
+  useEffect(() => {
+    fetchGSTINNumbers()
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach((entry) => {
+          if (entry?.gstCode && entry?.stateName) {
+            map[String(entry.gstCode).padStart(2, "0")] = entry.stateName;
+          }
+        });
+        setGstStateMap(map);
+      })
+      .catch((err) => console.error("Failed to load GST state map:", err));
+  }, []);
+
+  useEffect(() => {
+    if (!companyId) return;
+    fetchPartyMasters(companyId)
+      .then(({ data }) => setPartyMasters(data || []))
+      .catch((err) => console.error("Failed to load party masters:", err));
+  }, [companyId]);
+
   useEffect(() => {
     if (!ledgerModal.open || !ledgerModal.importId) {
       setModalAcceptCreditDrafts({});
       setModalActionDrafts({});
       setModalActionReasonDrafts({});
       setModalNarrationDrafts({});
+      setManualRows([
+        { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+      ]);
     }
   }, [ledgerModal.open, ledgerModal.importId]);
 
@@ -286,6 +341,80 @@ const B2BCompanyHistory = () => {
     (row, index) => String(row?._id ?? row?.slNo ?? index),
     []
   );
+  const addEmptyManualRow = useCallback(() => {
+    setManualRows((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+    ]);
+  }, []);
+
+  const getModalSupplierPayloadValue = useCallback(
+    (rowKey, rowMap) => {
+      const hasDraft = Object.prototype.hasOwnProperty.call(
+        modalSupplierNameDrafts,
+        rowKey
+      );
+      if (hasDraft) {
+        const draft = String(modalSupplierNameDrafts[rowKey] ?? "").trim();
+        return draft.length ? draft : null;
+      }
+      const baseRow = rowMap?.get(rowKey);
+      const base = String(baseRow?.supplierName ?? "").trim();
+      return base.length ? base : null;
+    },
+    [modalSupplierNameDrafts]
+  );
+
+  const handleManualRowChange = useCallback(
+    (rowId, field, value) => {
+      setManualRows((prev) => {
+        const next = prev.map((row) =>
+          row.id === rowId ? { ...row, [field]: value } : row
+        );
+        const row = next.find((r) => r.id === rowId);
+        const hasValue = Object.entries(row).some(
+          ([key, val]) =>
+            key !== "id" &&
+            key !== "isNew" &&
+            val !== null &&
+            val !== undefined &&
+            String(val).trim() !== ""
+        );
+        if (row.isNew && hasValue) {
+          row.isNew = false;
+          addEmptyManualRow();
+        }
+        if (field === "gstin") {
+          const gstin = String(value || "").trim().toUpperCase();
+          if (gstin && partyMasters.length) {
+            const match = partyMasters.find(
+              (p) => (p.gstin || "").trim().toUpperCase() === gstin
+            );
+            if (match) {
+              row.supplierName = match.partyName || "";
+              row._supplierNameAutoFilled = true;
+            } else {
+              row._supplierNameAutoFilled = false;
+            }
+          }
+          const stateCode = gstin.slice(0, 2);
+          row.supplierState = gstStateMap[stateCode] || "";
+        }
+        return [...next];
+      });
+    },
+    [addEmptyManualRow, gstStateMap, partyMasters]
+  );
+
+  const manualHasValue = (row) =>
+    Object.entries(row).some(
+      ([key, val]) =>
+        key !== "id" &&
+        key !== "isNew" &&
+        val !== null &&
+        val !== undefined &&
+        String(val).trim() !== ""
+    );
 
   const ledgerModalProcessedRows = useMemo(
     () => ledgerModal.processed?.processedRows || [],
@@ -328,7 +457,7 @@ const B2BCompanyHistory = () => {
     ]
   );
   const ledgerModalUpdateMap = {
-    processed: undefined,
+    processed: updateProcessedLedgerNames,
     reverseCharge: updateReverseChargeLedgerNames,
     mismatched: updateMismatchedLedgerNames,
     disallow: updateDisallowLedgerNames,
@@ -415,7 +544,7 @@ const B2BCompanyHistory = () => {
       'state',
       'supplierState',
       'GSTR-1/1A/IFF/GSTR-5 Filing Date',
-      'GSTR-2B Taxable Value'
+      'GSTR-2A Taxable Value'
     ];
     
     // Get base columns from the first row
@@ -438,6 +567,9 @@ const B2BCompanyHistory = () => {
     
     // Ensure Action, Action Reason, and Accept Credit are present
     const result = [...filteredColumns];
+    if (!result.includes("ITC Availability")) {
+      result.push("ITC Availability");
+    }
     
     // Add Accept Credit for mismatched tab if not already present
     if (
@@ -500,6 +632,19 @@ const B2BCompanyHistory = () => {
       const narrationSourceValue =
         narrationDraftValue !== undefined ? narrationDraftValue : row?.["Narration"] ?? "";
       payload.narration = narrationSourceValue || null;
+      const hasItcDraft = Object.prototype.hasOwnProperty.call(
+        modalItcAvailabilityDrafts,
+        rowKey
+      );
+      const itcDraftValue = hasItcDraft
+        ? modalItcAvailabilityDrafts[rowKey]
+        : undefined;
+      const itcSourceValue =
+        itcDraftValue !== undefined
+          ? itcDraftValue
+          : row?.["ITC Availability"] ?? "";
+      payload.itcAvailability = normalizeItcAvailabilityValue(itcSourceValue);
+      payload.supplierName = getModalSupplierPayloadValue(rowKey, ledgerModalRowMap);
       if (ledgerModal.activeTab === "mismatched") {
         const hasDraft = Object.prototype.hasOwnProperty.call(
           modalAcceptCreditDrafts,
@@ -523,6 +668,8 @@ const B2BCompanyHistory = () => {
       setModalActionDrafts({});
       setModalActionReasonDrafts({});
       setModalNarrationDrafts({});
+      setModalItcAvailabilityDrafts({});
+      setModalSupplierNameDrafts({});
     },
   });
 
@@ -552,6 +699,21 @@ const B2BCompanyHistory = () => {
       return (draftValue ?? null) !== (baseValue ?? null);
     },
     [ledgerModalRowMap, modalAcceptCreditDrafts, normalizeAcceptCreditValue]
+  );
+
+  const isModalItcDirtyForRow = useCallback(
+    (rowKey) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+      if (!Object.prototype.hasOwnProperty.call(modalItcAvailabilityDrafts, rowKey)) {
+        return false;
+      }
+      const draftValue = modalItcAvailabilityDrafts[rowKey];
+      return (draftValue ?? null) !== (baseValue ?? null);
+    },
+    [ledgerModalRowMap, modalItcAvailabilityDrafts]
   );
 
   const handleLedgerModalAcceptCreditChange = useCallback(
@@ -585,6 +747,122 @@ const B2BCompanyHistory = () => {
       isModalActionDirtyForRow,
       setModalAcceptDirtyState,
     ]
+  );
+
+  const handleLedgerModalItcAvailabilityChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const normalized = normalizeItcAvailabilityValue(value);
+      const baseValue = normalizeItcAvailabilityValue(
+        baseRow?.["ITC Availability"] ?? ""
+      );
+      setModalItcAvailabilityDrafts((prev) => {
+        const next = { ...prev };
+        if (normalized === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = normalized;
+        return next;
+      });
+      const actionDirty = isModalActionDirtyForRow(rowKey);
+      const acceptDirty = isMismatchedModal
+        ? isModalAcceptDirtyForRow(rowKey)
+        : false;
+      setModalAcceptDirtyState(
+        rowKey,
+        (normalized ?? null) !== (baseValue ?? null) ||
+          actionDirty ||
+          acceptDirty
+      );
+    },
+    [
+      ledgerModalRowMap,
+      normalizeItcAvailabilityValue,
+      isModalActionDirtyForRow,
+      isMismatchedModal,
+      isModalAcceptDirtyForRow,
+      setModalAcceptDirtyState,
+    ]
+  );
+
+  const saveManualRows = useCallback(async () => {
+    if (!ledgerModal.importId) return;
+    const payloadRows = manualRows
+      .filter((r) => !r.isNew && manualHasValue(r))
+      .map((r) => ({
+        date: r.date ?? null,
+        vchNo: r.vchNo ?? null,
+        supplierName: r.supplierName ?? null,
+        gstin: r.gstin ?? null,
+        state: r.state ?? null,
+        taxableValue: r.taxableValue ?? null,
+        ratePercent: r.ratePercent ?? null,
+        igst: r.igst ?? null,
+        cgst: r.cgst ?? null,
+        sgst: r.sgst ?? null,
+        cess: r.cess ?? null,
+        reverseCharge: r.reverseCharge ?? null,
+        itcAvailability: r.itcAvailability ?? null,
+        ledgerName: r.ledgerName ?? null,
+        action: r.action ?? null,
+        actionReason: r.actionReason ?? null,
+        narration: r.narration ?? null,
+      }));
+    if (!payloadRows.length) return;
+    try {
+      await appendManualRowsApi(ledgerModal.importId, { rows: payloadRows });
+      const { data } = await fetchProcessedFile(ledgerModal.importId);
+      setProcessedCache((prev) => ({
+        ...prev,
+        [ledgerModal.importId]: data,
+      }));
+      setLedgerModal((prev) => ({ ...prev, processed: data }));
+      setManualRows([
+        { id: crypto.randomUUID(), isNew: true, reverseCharge: "No", itcAvailability: "Yes" },
+      ]);
+      setStatus({ type: "success", message: "Manual rows saved." });
+    } catch (error) {
+      console.error("Failed to save manual rows (history):", error);
+      setStatus({
+        type: "error",
+        message:
+          error?.response?.data?.message ||
+          "Unable to save manual rows.",
+      });
+    }
+  }, [ledgerModal.importId, manualRows, manualHasValue, fetchProcessedFile]);
+
+  const handleLedgerModalSupplierChange = useCallback(
+    (rowKey, value) => {
+      const baseRow = ledgerModalRowMap.get(rowKey);
+      const baseValue = String(baseRow?.supplierName ?? "").trim();
+      const trimmed = String(value ?? "").trim();
+      setModalSupplierNameDrafts((prev) => {
+        const next = { ...prev };
+        if (trimmed === baseValue) {
+          if (Object.prototype.hasOwnProperty.call(next, rowKey)) {
+            delete next[rowKey];
+            return next;
+          }
+          return prev;
+        }
+        next[rowKey] = trimmed;
+        return next;
+      });
+      const actionDirty = isModalActionDirtyForRow(rowKey);
+      const acceptDirty = isMismatchedModal
+        ? isModalAcceptDirtyForRow(rowKey)
+        : false;
+      setModalAcceptDirtyState(
+        rowKey,
+        trimmed !== baseValue || actionDirty || acceptDirty
+      );
+    },
+    [ledgerModalRowMap, isModalActionDirtyForRow, isMismatchedModal, isModalAcceptDirtyForRow, setModalAcceptDirtyState]
   );
 
   const handleLedgerModalActionChange = useCallback(
@@ -625,9 +903,12 @@ const B2BCompanyHistory = () => {
       const acceptDirty = isMismatchedModal
         ? isModalAcceptDirtyForRow(rowKey)
         : false;
+      const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (normalized ?? null) !== (baseValue ?? null) || acceptDirty
+        (normalized ?? null) !== (baseValue ?? null) ||
+          acceptDirty ||
+          itcDirty
       );
     },
     [
@@ -635,6 +916,7 @@ const B2BCompanyHistory = () => {
       setModalAcceptDirtyState,
       isModalAcceptDirtyForRow,
       isMismatchedModal,
+      isModalItcDirtyForRow,
     ]
   );
 
@@ -660,9 +942,13 @@ const B2BCompanyHistory = () => {
       const acceptDirty = isMismatchedModal
         ? isModalAcceptDirtyForRow(rowKey)
         : false;
+      const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (rawValue !== baseValue) || actionDirty || acceptDirty
+        (rawValue !== baseValue) ||
+          actionDirty ||
+          acceptDirty ||
+          itcDirty
       );
     },
     [
@@ -670,6 +956,7 @@ const B2BCompanyHistory = () => {
       setModalAcceptDirtyState,
       isModalActionDirtyForRow,
       isMismatchedModal,
+      isModalItcDirtyForRow,
     ]
   );
 
@@ -695,9 +982,13 @@ const B2BCompanyHistory = () => {
       const acceptDirty = isMismatchedModal
         ? isModalAcceptDirtyForRow(rowKey)
         : false;
+      const itcDirty = isModalItcDirtyForRow(rowKey);
       setModalAcceptDirtyState(
         rowKey,
-        (rawValue !== baseValue) || actionDirty || acceptDirty
+        (rawValue !== baseValue) ||
+          actionDirty ||
+          acceptDirty ||
+          itcDirty
       );
     },
     [
@@ -705,6 +996,7 @@ const B2BCompanyHistory = () => {
       setModalAcceptDirtyState,
       isModalActionDirtyForRow,
       isMismatchedModal,
+      isModalItcDirtyForRow,
     ]
   );
 
@@ -725,9 +1017,9 @@ const B2BCompanyHistory = () => {
       });
       const worksheet = XLSX.utils.json_to_sheet(worksheetRows);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2B");
+      XLSX.utils.book_append_sheet(workbook, worksheet, "GSTR-2A");
       const filename = `${buildDownloadFilename(
-        "GSTR2BExcel",
+        "GSTR2AExcel",
         doc.companySnapshot?.companyName || company?.companyName
       )}.xlsx`;
       XLSX.writeFile(workbook, filename);
@@ -751,7 +1043,7 @@ const B2BCompanyHistory = () => {
       });
       setPreview({
         open: true,
-        title: "GSTR-2B Data",
+        title: "GSTR-2A Data",
         columns,
         rows: formattedRows,
       });
@@ -1333,7 +1625,7 @@ const B2BCompanyHistory = () => {
         >
           <h2 className="text-xl font-semibold text-slate-900 flex items-center gap-2">
             <FiFileText className="text-amber-500" />
-            GSTR-2B Imports
+            GSTR-2A Imports
           </h2>
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm text-slate-600">
@@ -1366,13 +1658,13 @@ const B2BCompanyHistory = () => {
                             onClick={() => downloadRawExcel(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiDownload /> GSTR2B Excel
+                            <FiDownload /> GSTR2A Excel
                           </button>
                           <button
                             onClick={() => openRawPreview(imp._id)}
                             className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
                           >
-                            <FiEye /> View GSTR2B
+                            <FiEye /> View GSTR2A
                           </button>
 
                           {/* 2. Edit LedgerMaster */}
@@ -1488,7 +1780,7 @@ const B2BCompanyHistory = () => {
 
       {ledgerModal.open && !readOnly ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-[98vw] max-w-[98vw] rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-hidden">
+          <div className="w-[98vw] max-w-[98vw] rounded-3xl bg-white p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-auto">
             <header className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="text-2xl font-semibold text-slate-900">
@@ -1580,7 +1872,7 @@ const B2BCompanyHistory = () => {
                     <tr>
                       {ledgerModalColumns.map((column) => {
                         // Skip the columns we're moving next to Ledger Name
-                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                           return null;
                         }
                         return (
@@ -1595,11 +1887,11 @@ const B2BCompanyHistory = () => {
                         );
                       })}
                       {/* Add grouped header for the ledger editing fields */}
-                      {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)) && (
+                      {ledgerModalColumns.some(col => ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)) && (
                         <th 
                           colSpan={
                             ledgerModalColumns.filter(col =>
-                              ['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(col)
+                              ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)
                             ).length + 2 // apply-below columns for ledger & action
                           }
                           className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
@@ -1611,7 +1903,7 @@ const B2BCompanyHistory = () => {
                     <tr className="bg-amber-50">
                       {ledgerModalColumns.map((column) => {
                         // Skip the columns we're moving next to Ledger Name in the main header
-                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                        if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                           return null;
                         }
                         return <th key={`sub-${column}`} className="invisible"></th>;
@@ -1620,6 +1912,11 @@ const B2BCompanyHistory = () => {
                       <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                         Apply Below
                       </th>
+                      {ledgerModalColumns.includes('ITC Availability') && (
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                          ITC Availability
+                        </th>
+                      )}
                       {ledgerModalColumns.includes('Accept Credit') && (
                         <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
                           Accept Credit
@@ -1675,7 +1972,7 @@ const B2BCompanyHistory = () => {
                           {ledgerModalColumns.map((column) => {
                             const cellKey = `${rowKey}-${column}`;
                             // Skip the columns we're moving next to Ledger Name in the main cells
-                            if (['Accept Credit', 'Action', 'Action Reason', 'Narration'].includes(column)) {
+                            if (['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(column)) {
                               return null;
                             }
                             return (
@@ -1685,7 +1982,34 @@ const B2BCompanyHistory = () => {
                                   column === 'Ledger Name' ? 'pr-1 border-r-2 border-amber-200' : ''
                                 }`}
                               >
-                                {column === "Ledger Name" ? (
+                                {column === "Supplier Name" || column === "supplierName" ? (
+                                  (() => {
+                                    const editable = isSupplierEditable(row);
+                                    const supplierValue = Object.prototype.hasOwnProperty.call(
+                                      modalSupplierNameDrafts,
+                                      rowKey
+                                    )
+                                      ? modalSupplierNameDrafts[rowKey] ?? ""
+                                      : row?.supplierName ?? row?.["Supplier Name"] ?? "";
+                                    if (!editable) {
+                                      return <span>{supplierValue}</span>;
+                                    }
+                                    return (
+                                      <input
+                                        type="text"
+                                        value={supplierValue}
+                                        onChange={(event) =>
+                                          handleLedgerModalSupplierChange(
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        placeholder="Supplier name"
+                                      />
+                                    );
+                                  })()
+                                ) : column === "Ledger Name" ? (
                                   <div className="flex items-center gap-1">
                                     <div className="flex-1">
                                       <LedgerNameDropdown
@@ -1842,6 +2166,44 @@ const B2BCompanyHistory = () => {
                                         );
                                       })()}
                                     </div>
+
+                                  {/* ITC Availability Field */}
+                                  {ledgerModalColumns.includes('ITC Availability') && (
+                                    <div className="w-24">
+                                      <select
+                                        value={
+                                          (() => {
+                                            if (
+                                              Object.prototype.hasOwnProperty.call(
+                                                modalItcAvailabilityDrafts,
+                                                rowKey
+                                              )
+                                            ) {
+                                              return (
+                                                modalItcAvailabilityDrafts[rowKey] ?? ""
+                                              );
+                                            }
+                                            return (
+                                              normalizeItcAvailabilityValue(
+                                                row?.["ITC Availability"] ?? ""
+                                              ) ?? ""
+                                            );
+                                          })()
+                                        }
+                                        onChange={(event) =>
+                                          handleLedgerModalItcAvailabilityChange(
+                                            rowKey,
+                                            event.target.value
+                                          )
+                                        }
+                                        className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      >
+                                        <option value="">Select</option>
+                                        <option value="Yes">Yes</option>
+                                        <option value="No">No</option>
+                                      </select>
+                                    </div>
+                                  )}
 
                                     {/* Accept Credit Field */}
                                     {ledgerModalColumns.includes('Accept Credit') && (
@@ -2154,6 +2516,270 @@ const B2BCompanyHistory = () => {
                 </p>
               )}
             </div>
+
+            {/* Manual row entry for history (GSTR-2A) */}
+            <div className="mt-6 mb-20">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-semibold text-slate-800">
+                  Manual Rows (GSTR-2A)
+                </h4>
+                <button
+                  type="button"
+                  onClick={saveManualRows}
+                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                  disabled={savingManualRows}
+                >
+                  {savingManualRows ? (
+                    <>
+                      <FiRefreshCw className="animate-spin" /> Saving...
+                    </>
+                  ) : (
+                    "Save Manual Rows"
+                  )}
+                </button>
+              </div>
+              <div className="overflow-auto rounded-xl border border-amber-100">
+                <table className="min-w-full text-xs text-slate-700 mb-20">
+                  <thead className="bg-amber-50">
+                    <tr>
+                      <th className="px-2 py-2 text-left font-semibold">Date</th>
+                      <th className="px-2 py-2 text-left font-semibold">Vch No</th>
+                      <th className="px-2 py-2 text-left font-semibold">Supplier Name</th>
+                      <th className="px-2 py-2 text-left font-semibold">GSTIN</th>
+                      <th className="px-2 py-2 text-left font-semibold">State</th>
+                      <th className="px-2 py-2 text-left font-semibold">Supplier State</th>
+                      <th className="px-2 py-2 text-left font-semibold">Taxable Value</th>
+                      <th className="px-2 py-2 text-left font-semibold">Rate %</th>
+                      <th className="px-2 py-2 text-left font-semibold">IGST</th>
+                      <th className="px-2 py-2 text-left font-semibold">CGST</th>
+                      <th className="px-2 py-2 text-left font-semibold">SGST/UTGST</th>
+                      <th className="px-2 py-2 text-left font-semibold">Cess</th>
+                      <th className="px-2 py-2 text-left font-semibold">Reverse Charge</th>
+                      <th className="px-2 py-2 text-left font-semibold">ITC Availability</th>
+                      <th className="px-2 py-2 text-left font-semibold">Ledger Name</th>
+                      <th className="px-2 py-2 text-left font-semibold">Action</th>
+                      <th className="px-2 py-2 text-left font-semibold">Action Reason</th>
+                      <th className="px-2 py-2 text-left font-semibold">Narration</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-50">
+                    {manualRows.map((row) => (
+                      <tr key={row.id} className="hover:bg-amber-50/40">
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={row.date ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "date", e.target.value)
+                            }
+                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={row.vchNo ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "vchNo", e.target.value)
+                            }
+                            className="w-24 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={row.supplierName ?? ""}
+                            onChange={(e) =>
+                              row._supplierNameAutoFilled
+                                ? null
+                                : handleManualRowChange(row.id, "supplierName", e.target.value)
+                            }
+                            readOnly={row._supplierNameAutoFilled}
+                            className="w-40 rounded border border-amber-200 px-2 py-1"
+                            placeholder={row._supplierNameAutoFilled ? "Auto-filled" : "Supplier Name"}
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={row.gstin ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "gstin", e.target.value)
+                            }
+                            className="w-32 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={row.state ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "state", e.target.value)
+                            }
+                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-slate-500">
+                          {row.supplierState || ""}
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            value={row.taxableValue ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "taxableValue", e.target.value)
+                            }
+                            className="w-24 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            value={row.ratePercent ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "ratePercent", e.target.value)
+                            }
+                            className="w-16 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            value={row.igst ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "igst", e.target.value)
+                            }
+                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            value={row.cgst ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "cgst", e.target.value)
+                            }
+                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            value={row.sgst ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "sgst", e.target.value)
+                            }
+                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="number"
+                            value={row.cess ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "cess", e.target.value)
+                            }
+                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <select
+                            value={row.reverseCharge ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "reverseCharge", e.target.value)
+                            }
+                            className="w-24 rounded border border-amber-200 px-2 py-1"
+                          >
+                            <option value="">Select</option>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                          </select>
+                        </td>
+                        <td className="px-2 py-2">
+                          <select
+                            value={row.itcAvailability ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "itcAvailability", e.target.value)
+                            }
+                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                          >
+                            <option value="">Select</option>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                          </select>
+                        </td>
+                        <td className="px-2 py-2">
+                          <div className="w-48">
+                            <LedgerNameDropdown
+                              value={row.ledgerName ?? ""}
+                              options={ledgerNames}
+                              onChange={(newValue) =>
+                                handleManualRowChange(row.id, "ledgerName", newValue)
+                              }
+                              onAddNew={async (newName) => {
+                                try {
+                                  await createLedgerNameApi({ name: newName });
+                                  await loadLedgerNames();
+                                  handleManualRowChange(row.id, "ledgerName", newName);
+                                  setStatus({
+                                    type: "success",
+                                    message: "Ledger name added.",
+                                  });
+                                } catch (error) {
+                                  console.error("Failed to add ledger name:", error);
+                                  setStatus({
+                                    type: "error",
+                                    message:
+                                      error?.response?.data?.message ||
+                                      "Unable to add ledger name.",
+                                  });
+                                }
+                              }}
+                            />
+                          </div>
+                        </td>
+                        <td className="px-2 py-2">
+                          <select
+                            value={row.action ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "action", e.target.value)
+                            }
+                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                          >
+                            <option value="">Action</option>
+                            {ACTION_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={row.actionReason ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "actionReason", e.target.value)
+                            }
+                            className="w-40 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            type="text"
+                            value={row.narration ?? ""}
+                            onChange={(e) =>
+                              handleManualRowChange(row.id, "narration", e.target.value)
+                            }
+                            className="w-40 rounded border border-amber-200 px-2 py-1"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -2227,5 +2853,5 @@ const B2BCompanyHistory = () => {
   );
 };
 
-export default B2BCompanyHistory;
+export default CompanyHistoryGstr2A;
 

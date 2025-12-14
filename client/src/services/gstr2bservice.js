@@ -44,3 +44,6 @@ export const updateDisallowLedgerNames = (id, payload) =>
 export const deleteImport = (id) =>
   axiosInstance.delete(`/api/gstr2b-imports/${id}`);
 
+export const tallyWithGstr2a = (id, payload) =>
+  axiosInstance.post(`/api/gstr2b-imports/${id}/tally-with-gstr2a`, payload);
+
