@@ -759,6 +759,86 @@ export const tallyWithGstr2A = async (req, res) => {
   }
 };
 
+/**
+ * Normalizes an invoice number by extracting the first meaningful numeric segment.
+ * This handles cases where invoice numbers have prefixes/suffixes but the actual
+ * invoice number is a numeric segment.
+ * 
+ * Logic:
+ * 1. Split by '/'
+ * 2. From left to right, pick the first segment that is purely numeric
+ * 3. Remove leading zeros safely
+ * 4. If no purely numeric segment found, pick the largest numeric group from the string
+ * 
+ * Examples:
+ * - "330/25-26" -> "330"
+ * - "VIPL/25-26/04074" -> "4074" (first purely numeric segment after splitting, leading zero removed)
+ * - "DEKJ/2526/07008" -> "7008" (first purely numeric segment after splitting, leading zero removed)
+ * - "CM/398" -> "398"
+ * - "25-26/1714" -> "1714"
+ * - "GST25-26/07445" -> "7445"
+ * 
+ * @param {string|number|null|undefined} value - The invoice number to normalize
+ * @returns {string} - The normalized invoice number (first numeric segment, or largest numeric group if none found)
+ */
+const normalizeInvoiceNumber = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  
+  // Convert to string, trim, and uppercase
+  const cleaned = String(value).trim().toUpperCase();
+  
+  if (!cleaned) {
+    return "";
+  }
+  
+  // Split by '/'
+  const segments = cleaned.split('/');
+  
+  // Collect all purely numeric segments
+  const purelyNumericSegments = [];
+  for (const segment of segments) {
+    const trimmedSegment = segment.trim();
+    // Check if segment is purely numeric: /^\d+$/
+    if (/^\d+$/.test(trimmedSegment)) {
+      purelyNumericSegments.push(trimmedSegment);
+    }
+  }
+  
+  // If we found purely numeric segments, pick the most meaningful one
+  if (purelyNumericSegments.length > 0) {
+    // Strategy: prefer longer segments (more likely to be invoice numbers than years)
+    // If same length, prefer the last one (invoice numbers often come after year prefixes)
+    const mostMeaningful = purelyNumericSegments.reduce((a, b) => {
+      if (b.length > a.length) return b;
+      if (b.length < a.length) return a;
+      // Same length: prefer the last one (rightmost)
+      return b;
+    });
+    // Remove leading zeros safely (but keep at least one digit if all zeros)
+    const normalized = mostMeaningful.replace(/^0+/, '') || '0';
+    return normalized;
+  }
+  
+  // If no purely numeric segment found, find the largest numeric group from the string
+  const allNumericGroups = cleaned.match(/\d+/g);
+  if (allNumericGroups && allNumericGroups.length > 0) {
+    // Find the largest numeric group (by numeric value)
+    const largest = allNumericGroups.reduce((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      return numB > numA ? b : a;
+    });
+    // Remove leading zeros safely
+    const normalized = largest.replace(/^0+/, '') || '0';
+    return normalized;
+  }
+  
+  // Fallback to the cleaned full string if no numeric part is found
+  return cleaned;
+};
+
 const parsePurchaseRegisterExcel = (workbook) => {
   // Use first sheet
   const firstSheetName = workbook.SheetNames[0];
@@ -892,15 +972,16 @@ const parsePurchaseRegisterExcel = (workbook) => {
 };
 
 const compareWithGstr2B = (purchaseRegisterRows, gstr2bProcessedRows) => {
-  // Build composite key map from GSTR-2B: "VCHNO|GSTIN" -> row
+  // Build composite key map from GSTR-2B: "NORMALIZED_VCHNO|GSTIN" -> row
   const gstr2bMap = new Map();
   (gstr2bProcessedRows || []).forEach((row) => {
-    const vchNo = String(row?.vchNo || "").trim().toUpperCase();
+    // Normalize invoice number (extract numeric suffix)
+    const normalizedVchNo = normalizeInvoiceNumber(row?.vchNo || "");
     const gstin = String(row?.gstinUin || "").trim().toUpperCase();
     const supplierAmount = typeof row?.supplierAmount === "number" ? row.supplierAmount : null;
 
-    if (vchNo && gstin) {
-      const compositeKey = `${vchNo}|${gstin}`;
+    if (normalizedVchNo && gstin) {
+      const compositeKey = `${normalizedVchNo}|${gstin}`;
       if (!gstr2bMap.has(compositeKey)) {
         gstr2bMap.set(compositeKey, []);
       }
@@ -911,12 +992,13 @@ const compareWithGstr2B = (purchaseRegisterRows, gstr2bProcessedRows) => {
   // Build composite key set from Purchase Register
   const prMap = new Map();
   purchaseRegisterRows.forEach((prRow) => {
-    const supplierInvoiceNo = String(prRow.supplierInvoiceNo || "").trim().toUpperCase();
+    // Normalize invoice number (extract numeric suffix)
+    const normalizedInvoiceNo = normalizeInvoiceNumber(prRow.supplierInvoiceNo || "");
     const gstin = String(prRow.gstinUin || "").trim().toUpperCase();
     const grossTotal = prRow.grossTotal;
 
-    if (supplierInvoiceNo && gstin) {
-      const compositeKey = `${supplierInvoiceNo}|${gstin}`;
+    if (normalizedInvoiceNo && gstin) {
+      const compositeKey = `${normalizedInvoiceNo}|${gstin}`;
       if (!prMap.has(compositeKey)) {
         prMap.set(compositeKey, []);
       }
@@ -1032,14 +1114,35 @@ export const tallyWithPurchaseReg = async (req, res) => {
       processed2B.processedRows || []
     );
 
-    // Store comparison result
+    // Build set of matched keys for deletion: "NORMALIZED_INVOICE_NO|GSTIN|SUPPLIER_AMOUNT"
+    // Include amount to ensure we only delete rows that match invoice+GSTIN+amount
+    const matchedKeysSet = new Set();
+    (comparison.matched || []).forEach((match) => {
+      const gstr2bRow = match.gstr2bRow;
+      if (gstr2bRow) {
+        const normalizedVchNo = normalizeInvoiceNumber(gstr2bRow.vchNo || "");
+        const gstin = String(gstr2bRow.gstinUin || "").trim().toUpperCase();
+        const supplierAmount = typeof gstr2bRow.supplierAmount === "number" 
+          ? gstr2bRow.supplierAmount 
+          : (gstr2bRow.supplierAmount !== null && gstr2bRow.supplierAmount !== undefined 
+            ? String(gstr2bRow.supplierAmount) 
+            : "");
+        if (normalizedVchNo && gstin) {
+          // Include amount in the key to make it more specific
+          const compositeKey = `${normalizedVchNo}|${gstin}|${supplierAmount}`;
+          matchedKeysSet.add(compositeKey);
+        }
+      }
+    });
+
+    // Store comparison result and delete matched rows
     const comparisonData = {
       purchaseRegisterRows,
       comparison,
       comparedAt: new Date().toISOString(),
     };
 
-    const updated = await storePurchaseRegisterComparison(id, comparisonData);
+    const updated = await storePurchaseRegisterComparison(id, comparisonData, matchedKeysSet);
     if (!updated) {
       return res.status(500).json({
         message: "Failed to store Purchase Register comparison",

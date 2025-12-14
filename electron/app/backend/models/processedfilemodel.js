@@ -95,6 +95,86 @@ const renumberRows = (rows = []) =>
     slNo: idx + 1,
   }));
 
+/**
+ * Normalizes an invoice number by extracting the first meaningful numeric segment.
+ * This handles cases where invoice numbers have prefixes/suffixes but the actual
+ * invoice number is a numeric segment.
+ * 
+ * Logic:
+ * 1. Split by '/'
+ * 2. From left to right, pick the first segment that is purely numeric
+ * 3. Remove leading zeros safely
+ * 4. If no purely numeric segment found, pick the largest numeric group from the string
+ * 
+ * Examples:
+ * - "330/25-26" -> "330"
+ * - "VIPL/25-26/04074" -> "4074" (first purely numeric segment after splitting, leading zero removed)
+ * - "DEKJ/2526/07008" -> "7008" (first purely numeric segment after splitting, leading zero removed)
+ * - "CM/398" -> "398"
+ * - "25-26/1714" -> "1714"
+ * - "GST25-26/07445" -> "7445"
+ * 
+ * @param {string|number|null|undefined} value - The invoice number to normalize
+ * @returns {string} - The normalized invoice number (first numeric segment, or largest numeric group if none found)
+ */
+const normalizeInvoiceNumber = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  
+  // Convert to string, trim, and uppercase
+  const cleaned = String(value).trim().toUpperCase();
+  
+  if (!cleaned) {
+    return "";
+  }
+  
+  // Split by '/'
+  const segments = cleaned.split('/');
+  
+  // Collect all purely numeric segments
+  const purelyNumericSegments = [];
+  for (const segment of segments) {
+    const trimmedSegment = segment.trim();
+    // Check if segment is purely numeric: /^\d+$/
+    if (/^\d+$/.test(trimmedSegment)) {
+      purelyNumericSegments.push(trimmedSegment);
+    }
+  }
+  
+  // If we found purely numeric segments, pick the most meaningful one
+  if (purelyNumericSegments.length > 0) {
+    // Strategy: prefer longer segments (more likely to be invoice numbers than years)
+    // If same length, prefer the last one (invoice numbers often come after year prefixes)
+    const mostMeaningful = purelyNumericSegments.reduce((a, b) => {
+      if (b.length > a.length) return b;
+      if (b.length < a.length) return a;
+      // Same length: prefer the last one (rightmost)
+      return b;
+    });
+    // Remove leading zeros safely (but keep at least one digit if all zeros)
+    const normalized = mostMeaningful.replace(/^0+/, '') || '0';
+    return normalized;
+  }
+  
+  // If no purely numeric segment found, find the largest numeric group from the string
+  const allNumericGroups = cleaned.match(/\d+/g);
+  if (allNumericGroups && allNumericGroups.length > 0) {
+    // Find the largest numeric group (by numeric value)
+    const largest = allNumericGroups.reduce((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+      return numB > numA ? b : a;
+    });
+    // Remove leading zeros safely
+    const normalized = largest.replace(/^0+/, '') || '0';
+    return normalized;
+  }
+  
+  // Fallback to the cleaned full string if no numeric part is found
+  return cleaned;
+};
+
 const buildUpdateMaps = (rows = []) => {
   const bySlNo = new Map();
   const byIndex = new Map();
@@ -866,7 +946,7 @@ export const tallyWithGstr2A = async (id, gstr2aProcessedRows = []) =>
     return { nextData, result: updated };
   });
 
-export const storePurchaseRegisterComparison = async (id, comparisonData = {}) =>
+export const storePurchaseRegisterComparison = async (id, comparisonData = {}, matchedKeysSet = new Set()) =>
   mutateCollection(COLLECTION_KEY, (entries) => {
     const index = entries.findIndex((entry) => entry._id === id);
     if (index === -1) {
@@ -874,8 +954,65 @@ export const storePurchaseRegisterComparison = async (id, comparisonData = {}) =
     }
 
     const target = entries[index] || {};
+    
+    // If there are matched keys, filter out matched rows from specified sheets
+    let processedRows = Array.isArray(target.processedRows) ? target.processedRows : [];
+    let reverseChargeRows = Array.isArray(target.reverseChargeRows) ? target.reverseChargeRows : [];
+    let mismatchedRows = Array.isArray(target.mismatchedRows) ? target.mismatchedRows : [];
+    let disallowRows = Array.isArray(target.disallowRows) ? target.disallowRows : [];
+    
+    if (matchedKeysSet.size > 0) {
+      // Filter function: keep row only if its composite key (with amount) is NOT in the matched set
+      const shouldKeep = (row) => {
+        const normalizedVchNo = normalizeInvoiceNumber(row?.vchNo || "");
+        const gstin = String(row?.gstinUin || "").trim().toUpperCase();
+        
+        // If either field is missing, keep the row (don't remove)
+        if (!normalizedVchNo || !gstin) {
+          return true;
+        }
+        
+        // Include amount in the key to match the same format used when building matchedKeysSet
+        const supplierAmount = typeof row?.supplierAmount === "number" 
+          ? row.supplierAmount 
+          : (row?.supplierAmount !== null && row?.supplierAmount !== undefined 
+            ? String(row.supplierAmount) 
+            : "");
+        const compositeKey = `${normalizedVchNo}|${gstin}|${supplierAmount}`;
+        return !matchedKeysSet.has(compositeKey);
+      };
+
+      // Filter all four collections
+      processedRows = processedRows.filter(shouldKeep);
+      reverseChargeRows = reverseChargeRows.filter(shouldKeep);
+      mismatchedRows = mismatchedRows.filter(shouldKeep);
+      disallowRows = disallowRows.filter(shouldKeep);
+
+      // Renumber all collections
+      processedRows = renumberRows(processedRows);
+      reverseChargeRows = renumberRows(reverseChargeRows);
+      mismatchedRows = renumberRows(mismatchedRows);
+      disallowRows = renumberRows(disallowRows);
+
+      // Sync derived collections (reverseChargeRows and mismatchedRows) with processedRows
+      // This ensures they only contain rows that exist in processedRows
+      const syncedCollections = syncDerivedCollections(processedRows, target, {
+        reverseChargeRows,
+        mismatchedRows,
+      });
+
+      // Use synced collections but keep our filtered disallowRows
+      reverseChargeRows = syncedCollections.reverseChargeRows;
+      mismatchedRows = syncedCollections.mismatchedRows;
+      // Keep our filtered disallowRows (don't rebuild from processedRows)
+    }
+
     const updated = {
       ...target,
+      processedRows,
+      reverseChargeRows,
+      mismatchedRows,
+      disallowRows,
       purchaseRegisterComparison: comparisonData,
       updatedAt: new Date().toISOString(),
     };
