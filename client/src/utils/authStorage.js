@@ -24,19 +24,38 @@ export const getAuthData = async () => {
 export const setAuthData = async (auth) => {
   try {
     if (isElectron()) {
-      await window.electronAPI.writeJson(ELECTRON_SESSION_FILE, auth || {});
+      if (!auth) {
+        await window.electronAPI.writeJson(ELECTRON_SESSION_FILE, {});
+        return;
+      }
+
+      const existing =
+        (await window.electronAPI.readJson(ELECTRON_SESSION_FILE)) || {};
+
+      const updated = {
+        ...existing,
+        ...auth,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await window.electronAPI.writeJson(ELECTRON_SESSION_FILE, updated);
       return;
     }
 
+    // Browser fallback
     if (!auth) {
       window.localStorage.removeItem("softwareAuth");
     } else {
-      window.localStorage.setItem("softwareAuth", JSON.stringify(auth));
+      window.localStorage.setItem(
+        "softwareAuth",
+        JSON.stringify(auth),
+      );
     }
   } catch {
     // ignore
   }
 };
+
 
 export const clearAuthData = async () => {
   await setAuthData(null);

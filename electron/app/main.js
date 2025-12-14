@@ -18,6 +18,33 @@ const __dirname = path.dirname(__filename);
 // This avoids issues with app.getAppPath() not being available at module load time
 let getBaseDir, ensurePreferredDataDir, setBaseDir;
 
+const migrateOldStorageIfNeeded = async () => {
+  try {
+    const oldPath = path.join(
+      path.dirname(process.execPath),
+      "ImportEaseStorage"
+    );
+
+    const newPath = path.join(
+      app.getPath("userData"),
+      "ImportEaseStorage"
+    );
+
+    if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+      console.log("[migration] Migrating old storage to userData");
+      await fs.mkdir(path.dirname(newPath), { recursive: true });
+      await fs.cp(oldPath, newPath, {
+        recursive: true,
+        force: false,
+        errorOnExist: false,
+      });
+    }
+  } catch (err) {
+    console.error("[migration] Failed:", err);
+  }
+};
+
+
 const loadFileService = async () => {
   if (app.isPackaged) {
     // ✅ Always import directly from app.asar
@@ -719,6 +746,8 @@ const bootstrap = async () => {
   // Set initial menu
   refreshAppMenu();
 
+  await migrateOldStorageIfNeeded();
+
   // Load fileService.js first
   const fileServiceModule = await loadFileService();
   getBaseDir = fileServiceModule.getBaseDir;
@@ -739,6 +768,16 @@ const bootstrap = async () => {
     );
     app.quit();
     return;
+  }
+
+  // Run data migrations before backend startup
+  try {
+    const { runMigrations } = await import("./migrations/index.js");
+    const { readJson, writeJson } = fileServiceModule;
+    await runMigrations(readJson, writeJson);
+  } catch (error) {
+    console.error("[main] Migration failed (continuing anyway):", error);
+    // Don't block app startup if migrations fail
   }
 
   // Register IPC handlers

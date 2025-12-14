@@ -42,11 +42,12 @@ export const ensurePreferredDataDir = async () => {
   const electronApp = getElectronApp();
   let preferred;
 
-  if (electronApp?.isPackaged) {
-    const exeFolder = path.dirname(process.execPath); // folder where exe is
-    preferred = path.join(exeFolder, STORAGE_SUBDIR);
+  if (electronApp) {
+    preferred = path.join(
+      electronApp.getPath("userData"),
+      STORAGE_SUBDIR
+    );
   } else {
-    // dev fallback
     preferred = path.join(process.cwd(), "storage", "data");
   }
 
