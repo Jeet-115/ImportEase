@@ -773,14 +773,49 @@ const parsePurchaseRegisterExcel = (workbook) => {
     defval: null,
   });
 
-  // Row 8 (0-indexed: 7) contains headers
-  // Row 9 (0-indexed: 8) onward contains data
-  if (rows.length < 8) {
-    throw new Error("Purchase Register Excel must have at least 8 rows");
+  if (rows.length < 2) {
+    throw new Error("Purchase Register Excel must have at least 2 rows");
   }
 
-  const headerRow = rows[7] || []; // Row 8 (0-indexed: 7)
-  const dataRows = rows.slice(8); // Row 9 onward
+  // Required column names to identify header row
+  const headerSearchColumns = [
+    "Supplier Invoice No.",
+    "GSTIN/UIN",
+    "Gross Total",
+  ];
+
+  // Search for header row between rows 1-10 (0-indexed: 0-9)
+  let headerRowIndex = -1;
+  let headerRow = null;
+
+  for (let i = 0; i < Math.min(20, rows.length); i++) {
+    const candidateRow = rows[i] || [];
+    const rowValues = candidateRow.map((cell) =>
+      String(cell || "").trim().toLowerCase()
+    );
+
+    // Check if this row contains all required column names
+    const hasAllRequired = headerSearchColumns.every((colName) => {
+      const normalized = colName.trim().toLowerCase();
+      return rowValues.includes(normalized);
+    });
+
+    if (hasAllRequired) {
+      headerRowIndex = i;
+      headerRow = candidateRow;
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1 || !headerRow) {
+    throw new Error(
+      `Could not find header row with required columns (${headerSearchColumns.join(", ")}) in first 20 rows`
+    );
+  }
+
+  // Data starts from the row after header row
+  const dataStartIndex = headerRowIndex + 1;
+  const dataRows = rows.slice(dataStartIndex);
 
   // Find column indices for required columns
   const findColumnIndex = (headerName) => {
@@ -837,7 +872,7 @@ const parsePurchaseRegisterExcel = (workbook) => {
       };
 
       return {
-        _rowIndex: idx + 9, // Actual row number in Excel (1-indexed)
+        _rowIndex: idx + headerRowIndex + 2, // Actual row number in Excel (1-indexed: headerRowIndex + 1 + dataRowIndex + 1)
         date: parseString(row[dateIdx]),
         particulars: parseString(row[particularsIdx]),
         voucherNo: parseString(row[voucherNoIdx]),
