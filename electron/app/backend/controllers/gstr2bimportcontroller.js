@@ -14,6 +14,7 @@ import {
   updateDisallowLedgerNames as updateDisallowLedgerNamesById,
   deleteById as deleteProcessedById,
   tallyWithGstr2A as tallyWithGstr2AById,
+  storePurchaseRegisterComparison,
 } from "../models/processedfilemodel.js";
 import { findById as findGstr2AProcessedById } from "../models/processedfilemodel2a.js";
 import { processAndStoreDocument } from "../utils/gstr2bProcessor.js";
@@ -754,6 +755,275 @@ export const tallyWithGstr2A = async (req, res) => {
     console.error("tallyWithGstr2A Error:", error);
     return res.status(500).json({
       message: error.message || "Failed to tally GSTR-2B with GSTR-2A",
+    });
+  }
+};
+
+const parsePurchaseRegisterExcel = (workbook) => {
+  // Use first sheet
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) {
+    throw new Error("No sheets found in Purchase Register Excel file");
+  }
+
+  const sheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    raw: true,
+    defval: null,
+  });
+
+  // Row 8 (0-indexed: 7) contains headers
+  // Row 9 (0-indexed: 8) onward contains data
+  if (rows.length < 8) {
+    throw new Error("Purchase Register Excel must have at least 8 rows");
+  }
+
+  const headerRow = rows[7] || []; // Row 8 (0-indexed: 7)
+  const dataRows = rows.slice(8); // Row 9 onward
+
+  // Find column indices for required columns
+  const findColumnIndex = (headerName) => {
+    const normalized = String(headerName || "").trim().toLowerCase();
+    return headerRow.findIndex((cell) => {
+      const cellValue = String(cell || "").trim().toLowerCase();
+      return cellValue === normalized;
+    });
+  };
+
+  const dateIdx = findColumnIndex("Date");
+  const particularsIdx = findColumnIndex("Particulars");
+  const voucherNoIdx = findColumnIndex("Voucher No.");
+  const supplierInvoiceNoIdx = findColumnIndex("Supplier Invoice No.");
+  const supplierInvoiceDateIdx = findColumnIndex("Supplier Invoice Date");
+  const gstinUinIdx = findColumnIndex("GSTIN/UIN");
+  const grossTotalIdx = findColumnIndex("Gross Total");
+  const allItemsIdx = findColumnIndex("All Items");
+
+  // Validate required columns
+  const requiredColumns = {
+    "Supplier Invoice No.": supplierInvoiceNoIdx,
+    "GSTIN/UIN": gstinUinIdx,
+    "Gross Total": grossTotalIdx,
+  };
+
+  const missingColumns = Object.entries(requiredColumns)
+    .filter(([_, idx]) => idx === -1)
+    .map(([name]) => name);
+
+  if (missingColumns.length > 0) {
+    throw new Error(
+      `Missing required columns in Purchase Register: ${missingColumns.join(", ")}`
+    );
+  }
+
+  // Parse data rows
+  const parsedRows = dataRows
+    .filter((row) => {
+      // Filter out empty rows
+      return row && row.some((cell) => cell !== null && cell !== undefined && String(cell).trim().length > 0);
+    })
+    .map((row, idx) => {
+      const parseNumber = (value) => {
+        if (value === null || value === undefined || value === "") return null;
+        const normalized = typeof value === "string" ? value.replace(/,/g, "").trim() : value;
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+
+      const parseString = (value) => {
+        if (value === null || value === undefined) return null;
+        return String(value).trim() || null;
+      };
+
+      return {
+        _rowIndex: idx + 9, // Actual row number in Excel (1-indexed)
+        date: parseString(row[dateIdx]),
+        particulars: parseString(row[particularsIdx]),
+        voucherNo: parseString(row[voucherNoIdx]),
+        supplierInvoiceNo: parseString(row[supplierInvoiceNoIdx]),
+        supplierInvoiceDate: parseString(row[supplierInvoiceDateIdx]),
+        gstinUin: parseString(row[gstinUinIdx]),
+        grossTotal: parseNumber(row[grossTotalIdx]),
+        allItems: parseString(row[allItemsIdx]),
+      };
+    })
+    .filter((row) => {
+      // Ignore rows where Supplier Invoice No. or GSTIN/UIN is empty
+      return row.supplierInvoiceNo && row.gstinUin;
+    });
+
+  return parsedRows;
+};
+
+const compareWithGstr2B = (purchaseRegisterRows, gstr2bProcessedRows) => {
+  // Build composite key map from GSTR-2B: "VCHNO|GSTIN" -> row
+  const gstr2bMap = new Map();
+  (gstr2bProcessedRows || []).forEach((row) => {
+    const vchNo = String(row?.vchNo || "").trim().toUpperCase();
+    const gstin = String(row?.gstinUin || "").trim().toUpperCase();
+    const supplierAmount = typeof row?.supplierAmount === "number" ? row.supplierAmount : null;
+
+    if (vchNo && gstin) {
+      const compositeKey = `${vchNo}|${gstin}`;
+      if (!gstr2bMap.has(compositeKey)) {
+        gstr2bMap.set(compositeKey, []);
+      }
+      gstr2bMap.get(compositeKey).push({ row, supplierAmount });
+    }
+  });
+
+  // Build composite key set from Purchase Register
+  const prMap = new Map();
+  purchaseRegisterRows.forEach((prRow) => {
+    const supplierInvoiceNo = String(prRow.supplierInvoiceNo || "").trim().toUpperCase();
+    const gstin = String(prRow.gstinUin || "").trim().toUpperCase();
+    const grossTotal = prRow.grossTotal;
+
+    if (supplierInvoiceNo && gstin) {
+      const compositeKey = `${supplierInvoiceNo}|${gstin}`;
+      if (!prMap.has(compositeKey)) {
+        prMap.set(compositeKey, []);
+      }
+      prMap.get(compositeKey).push({ prRow, grossTotal });
+    }
+  });
+
+  // Classify rows
+  const matched = [];
+  const missingInPR = [];
+  const missingInGstr2B = [];
+
+  // Track which PR rows have been matched
+  const matchedPRKeys = new Set();
+
+  // Check GSTR-2B rows
+  gstr2bMap.forEach((gstr2bRows, key) => {
+    const prRows = prMap.get(key) || [];
+    if (prRows.length === 0) {
+      // Missing in Purchase Register
+      gstr2bRows.forEach(({ row }) => {
+        missingInPR.push({
+          status: "missing_in_pr",
+          gstr2bRow: row,
+          purchaseRegisterRow: null,
+        });
+      });
+    } else {
+      // Check for amount match
+      for (const { row, supplierAmount } of gstr2bRows) {
+        let foundMatch = false;
+        for (const { prRow, grossTotal } of prRows) {
+          // Match condition: supplierAmount == grossTotal OR supplierAmount == grossTotal ± 1
+          const amountMatch =
+            supplierAmount !== null &&
+            grossTotal !== null &&
+            (supplierAmount === grossTotal ||
+              Math.abs(supplierAmount - grossTotal) <= 1);
+
+          if (amountMatch) {
+            matched.push({
+              status: "matched",
+              gstr2bRow: row,
+              purchaseRegisterRow: prRow,
+            });
+            matchedPRKeys.add(key);
+            foundMatch = true;
+            break;
+          }
+        }
+        if (!foundMatch) {
+          // Amount doesn't match, still consider as missing in PR
+          missingInPR.push({
+            status: "missing_in_pr",
+            gstr2bRow: row,
+            purchaseRegisterRow: null,
+          });
+        }
+      }
+    }
+  });
+
+  // Check Purchase Register rows that weren't matched
+  prMap.forEach((prRows, key) => {
+    if (!matchedPRKeys.has(key)) {
+      // This PR key wasn't matched, check if it exists in GSTR-2B
+      const gstr2bRows = gstr2bMap.get(key) || [];
+      if (gstr2bRows.length === 0) {
+        // Missing in GSTR-2B
+        prRows.forEach(({ prRow }) => {
+          missingInGstr2B.push({
+            status: "missing_in_gstr2b",
+            gstr2bRow: null,
+            purchaseRegisterRow: prRow,
+          });
+        });
+      }
+    }
+  });
+
+  return {
+    matched,
+    missingInPR,
+    missingInGstr2B,
+  };
+};
+
+export const tallyWithPurchaseReg = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ message: "Purchase Register Excel file is required" });
+    }
+
+    const processed2B = await findProcessedById(id);
+    if (!processed2B) {
+      return res.status(404).json({ message: "Processed GSTR-2B file not found" });
+    }
+
+    // Parse Purchase Register Excel
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const purchaseRegisterRows = parsePurchaseRegisterExcel(workbook);
+
+    if (!purchaseRegisterRows.length) {
+      return res.status(400).json({
+        message: "No valid rows found in Purchase Register Excel file",
+      });
+    }
+
+    // Compare with GSTR-2B processed rows
+    const comparison = compareWithGstr2B(
+      purchaseRegisterRows,
+      processed2B.processedRows || []
+    );
+
+    // Store comparison result
+    const comparisonData = {
+      purchaseRegisterRows,
+      comparison,
+      comparedAt: new Date().toISOString(),
+    };
+
+    const updated = await storePurchaseRegisterComparison(id, comparisonData);
+    if (!updated) {
+      return res.status(500).json({
+        message: "Failed to store Purchase Register comparison",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Purchase Register tally completed successfully.",
+      processed: updated,
+      comparison: {
+        matched: comparison.matched.length,
+        missingInPR: comparison.missingInPR.length,
+        missingInGstr2B: comparison.missingInGstr2B.length,
+      },
+    });
+  } catch (error) {
+    console.error("tallyWithPurchaseReg Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to tally with Purchase Register",
     });
   }
 };

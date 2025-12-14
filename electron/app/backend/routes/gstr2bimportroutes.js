@@ -10,6 +10,7 @@ import {
   updateMismatchedLedgerNames,
   updateDisallowLedgerNames,
   tallyWithGstr2A,
+  tallyWithPurchaseReg,
   deleteImport,
   uploadMiddleware,
 } from "../controllers/gstr2bimportcontroller.js";
@@ -46,6 +47,12 @@ router.post(
   "/:id/tally-with-gstr2a",
   requireActiveSubscription,
   tallyWithGstr2A,
+);
+router.post(
+  "/:id/tally-with-purchase-reg",
+  requireActiveSubscription,
+  uploadMiddleware,
+  tallyWithPurchaseReg,
 );
 router.delete("/:id", requireActiveSubscription, deleteImport);
 

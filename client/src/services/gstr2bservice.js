@@ -47,3 +47,13 @@ export const deleteImport = (id) =>
 export const tallyWithGstr2a = (id, payload) =>
   axiosInstance.post(`/api/gstr2b-imports/${id}/tally-with-gstr2a`, payload);
 
+export const tallyWithPurchaseReg = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return axiosInstance.post(`/api/gstr2b-imports/${id}/tally-with-purchase-reg`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+};
+

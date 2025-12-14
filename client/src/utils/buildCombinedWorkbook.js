@@ -136,6 +136,7 @@ export const buildCombinedWorkbook = ({
   reverseChargeRows = [],
   disallowRows = [],
   restSheets = [],
+  purchaseRegisterComparison = null,
   normalizeAcceptCreditValue = (value) => value,
 }) => {
   const workbook = XLSX.utils.book_new();
@@ -1156,6 +1157,113 @@ export const buildCombinedWorkbook = ({
       }
       const restSheet = XLSX.utils.aoa_to_sheet(restData);
       XLSX.utils.book_append_sheet(workbook, restSheet, "Rest Sheets");
+    }
+  }
+
+  // Purchase Register Comparison sheet
+  if (purchaseRegisterComparison) {
+    const { comparison } = purchaseRegisterComparison;
+    if (comparison) {
+      const { matched = [], missingInPR = [], missingInGstr2B = [] } = comparison;
+      
+      // Build comparison rows
+      const comparisonRows = [];
+      
+      // Matched rows (Green)
+      matched.forEach(({ gstr2bRow, purchaseRegisterRow }) => {
+        const row = {
+          Status: "Matched",
+          "GSTR-2B Vch No": gstr2bRow?.vchNo || "",
+          "GSTR-2B GSTIN/UIN": gstr2bRow?.gstinUin || "",
+          "GSTR-2B Supplier Amount": gstr2bRow?.supplierAmount || "",
+          "GSTR-2B Supplier Name": gstr2bRow?.supplierName || "",
+          "PR Supplier Invoice No": purchaseRegisterRow?.supplierInvoiceNo || "",
+          "PR GSTIN/UIN": purchaseRegisterRow?.gstinUin || "",
+          "PR Gross Total": purchaseRegisterRow?.grossTotal || "",
+          "PR Date": purchaseRegisterRow?.date || "",
+          "PR Particulars": purchaseRegisterRow?.particulars || "",
+        };
+        comparisonRows.push({ row, color: "green" });
+      });
+      
+      // Missing in Purchase Register (Red)
+      missingInPR.forEach(({ gstr2bRow }) => {
+        const row = {
+          Status: "Missing in Purchase Register",
+          "GSTR-2B Vch No": gstr2bRow?.vchNo || "",
+          "GSTR-2B GSTIN/UIN": gstr2bRow?.gstinUin || "",
+          "GSTR-2B Supplier Amount": gstr2bRow?.supplierAmount || "",
+          "GSTR-2B Supplier Name": gstr2bRow?.supplierName || "",
+          "PR Supplier Invoice No": "",
+          "PR GSTIN/UIN": "",
+          "PR Gross Total": "",
+          "PR Date": "",
+          "PR Particulars": "",
+        };
+        comparisonRows.push({ row, color: "red" });
+      });
+      
+      // Missing in GSTR-2B (Orange)
+      missingInGstr2B.forEach(({ purchaseRegisterRow }) => {
+        const row = {
+          Status: "Missing in GSTR-2B",
+          "GSTR-2B Vch No": "",
+          "GSTR-2B GSTIN/UIN": "",
+          "GSTR-2B Supplier Amount": "",
+          "GSTR-2B Supplier Name": "",
+          "PR Supplier Invoice No": purchaseRegisterRow?.supplierInvoiceNo || "",
+          "PR GSTIN/UIN": purchaseRegisterRow?.gstinUin || "",
+          "PR Gross Total": purchaseRegisterRow?.grossTotal || "",
+          "PR Date": purchaseRegisterRow?.date || "",
+          "PR Particulars": purchaseRegisterRow?.particulars || "",
+        };
+        comparisonRows.push({ row, color: "orange" });
+      });
+      
+      if (comparisonRows.length > 0) {
+        const headers = [
+          "Status",
+          "GSTR-2B Vch No",
+          "GSTR-2B GSTIN/UIN",
+          "GSTR-2B Supplier Amount",
+          "GSTR-2B Supplier Name",
+          "PR Supplier Invoice No",
+          "PR GSTIN/UIN",
+          "PR Gross Total",
+          "PR Date",
+          "PR Particulars",
+        ];
+        
+        const sheetData = [headers];
+        comparisonRows.forEach(({ row }) => {
+          sheetData.push(headers.map((h) => row[h] || ""));
+        });
+        
+        const comparisonSheet = XLSX.utils.aoa_to_sheet(sheetData);
+        
+        // Apply color coding
+        comparisonRows.forEach(({ color }, idx) => {
+          const rowIndex = idx + 1; // +1 for header row
+          const colorCode = COLOR_MAP[color] || COLOR_MAP.none;
+          headers.forEach((_, colIdx) => {
+            const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: colIdx });
+            let cell = comparisonSheet[cellRef];
+            if (!cell) {
+              cell = { t: "s", v: "" };
+              comparisonSheet[cellRef] = cell;
+            }
+            cell.s = {
+              ...cell.s,
+              fill: {
+                patternType: "solid",
+                fgColor: { rgb: colorCode },
+              },
+            };
+          });
+        });
+        
+        XLSX.utils.book_append_sheet(workbook, comparisonSheet, "purchaseregcompared");
+      }
     }
   }
 

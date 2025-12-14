@@ -866,3 +866,22 @@ export const tallyWithGstr2A = async (id, gstr2aProcessedRows = []) =>
     return { nextData, result: updated };
   });
 
+export const storePurchaseRegisterComparison = async (id, comparisonData = {}) =>
+  mutateCollection(COLLECTION_KEY, (entries) => {
+    const index = entries.findIndex((entry) => entry._id === id);
+    if (index === -1) {
+      return { nextData: entries, result: null, skipWrite: true };
+    }
+
+    const target = entries[index] || {};
+    const updated = {
+      ...target,
+      purchaseRegisterComparison: comparisonData,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextData = [...entries];
+    nextData[index] = updated;
+    return { nextData, result: updated };
+  });
+

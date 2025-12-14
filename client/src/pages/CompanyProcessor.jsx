@@ -23,6 +23,7 @@ import {
   updateDisallowLedgerNames,
   fetchImportById,
   tallyWithGstr2a,
+  tallyWithPurchaseReg,
 } from "../services/gstr2bservice";
 import {
   createLedgerName as createLedgerNameApi,
@@ -323,6 +324,12 @@ const CompanyProcessor = () => {
     loading: false,
     options: [],
     selectedId: "",
+    submitting: false,
+    error: "",
+  });
+  const [purchaseRegModal, setPurchaseRegModal] = useState({
+    open: false,
+    file: null,
     submitting: false,
     error: "",
   });
@@ -2130,6 +2137,7 @@ const CompanyProcessor = () => {
         reverseChargeRows: reverseChargeRowsClean,
         disallowRows: disallowRowsClean,
         restSheets,
+        purchaseRegisterComparison: doc.purchaseRegisterComparison || null,
         normalizeAcceptCreditValue,
       });
 
@@ -2306,6 +2314,52 @@ const CompanyProcessor = () => {
         error:
           error?.response?.data?.message ||
           "Unable to tally with GSTR-2A. Please try again.",
+      }));
+    }
+  };
+
+  const openPurchaseRegModal = () => {
+    if (!processedDoc) return;
+    setPurchaseRegModal({
+      open: true,
+      file: null,
+      submitting: false,
+      error: "",
+    });
+  };
+
+  const handlePurchaseRegFileChange = (e) => {
+    const file = e.target.files?.[0] || null;
+    setPurchaseRegModal((prev) => ({ ...prev, file }));
+  };
+
+  const handlePurchaseRegSubmit = async () => {
+    if (!importId || !purchaseRegModal.file) return;
+    setPurchaseRegModal((prev) => ({ ...prev, submitting: true, error: "" }));
+    try {
+      const { data } = await tallyWithPurchaseReg(importId, purchaseRegModal.file);
+      const updated = data?.processed;
+      if (updated) {
+        setProcessedDoc(updated);
+        setStatus({
+          type: "success",
+          message: "Purchase Register tally completed successfully.",
+        });
+      }
+      setPurchaseRegModal({
+        open: false,
+        file: null,
+        submitting: false,
+        error: "",
+      });
+    } catch (error) {
+      console.error("Failed to tally with Purchase Register:", error);
+      setPurchaseRegModal((prev) => ({
+        ...prev,
+        submitting: false,
+        error:
+          error?.response?.data?.message ||
+          "Unable to tally with Purchase Register. Please try again.",
       }));
     }
   };
@@ -2601,6 +2655,14 @@ const CompanyProcessor = () => {
               >
                 <FiRefreshCw />
                 Tally with GSTR-2A
+              </button>
+              <button
+                onClick={openPurchaseRegModal}
+                disabled={processing || !processedDoc}
+                className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+              >
+                <FiUploadCloud />
+                Tally with Purchase Reg
               </button>
             </div>
 
@@ -3302,6 +3364,86 @@ const CompanyProcessor = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {purchaseRegModal.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Tally with Purchase Register</h3>
+                <p className="text-sm text-slate-600">
+                  Upload a Purchase Register Excel file to compare with this GSTR-2B processed sheet.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPurchaseRegModal((prev) => ({ ...prev, open: false }))}
+                className="rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+                aria-label="Close"
+              >
+                <FiX />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-700">
+                Purchase Register Excel file
+              </label>
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                onChange={handlePurchaseRegFileChange}
+                disabled={purchaseRegModal.submitting}
+                className="w-full rounded-lg border border-amber-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200 disabled:opacity-60"
+              />
+              {purchaseRegModal.file ? (
+                <p className="text-xs text-slate-600">
+                  Selected: {purchaseRegModal.file.name}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Please select a Purchase Register Excel file (.xlsx or .xls)
+                </p>
+              )}
+              {purchaseRegModal.error ? (
+                <p className="text-xs text-rose-600">{purchaseRegModal.error}</p>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPurchaseRegModal((prev) => ({ ...prev, open: false }))}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                disabled={purchaseRegModal.submitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePurchaseRegSubmit}
+                disabled={
+                  purchaseRegModal.submitting ||
+                  !purchaseRegModal.file
+                }
+                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+              >
+                {purchaseRegModal.submitting ? (
+                  <>
+                    <FiRefreshCw className="animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <FiUploadCloud />
+                    Upload & Compare
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
