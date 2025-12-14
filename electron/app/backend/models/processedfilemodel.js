@@ -809,21 +809,37 @@ export const tallyWithGstr2A = async (id, gstr2aProcessedRows = []) =>
       ? target.disallowRows
       : [];
 
-    // Build normalized vchNo set from GSTR-2A
-    const vchSet = new Set(
-      (gstr2aProcessedRows || [])
-        .map((row) => String(row?.vchNo || "").trim().toUpperCase())
-        .filter((v) => v)
-    );
+    // Build composite key set from GSTR-2A: "VCHNO|GSTIN"
+    // Normalize: trim whitespace, case-insensitive (toUpperCase)
+    // Ignore rows where either vchNo or gstinUin is empty/null
+    const compositeKeySet = new Set();
+    (gstr2aProcessedRows || []).forEach((row) => {
+      const vchNo = String(row?.vchNo || "").trim().toUpperCase();
+      const gstin = String(row?.gstinUin || "").trim().toUpperCase();
+      
+      // Only add to set if both values are present
+      if (vchNo && gstin) {
+        const compositeKey = `${vchNo}|${gstin}`;
+        compositeKeySet.add(compositeKey);
+      }
+    });
 
-    if (!vchSet.size) {
+    if (!compositeKeySet.size) {
       return { nextData: entries, result: target, skipWrite: true };
     }
 
+    // Filter function: keep row only if its composite key is NOT in the set
     const shouldKeep = (row) => {
-      const key = String(row?.vchNo || "").trim().toUpperCase();
-      if (!key) return true;
-      return !vchSet.has(key);
+      const vchNo = String(row?.vchNo || "").trim().toUpperCase();
+      const gstin = String(row?.gstinUin || "").trim().toUpperCase();
+      
+      // If either field is missing, keep the row (don't remove)
+      if (!vchNo || !gstin) {
+        return true;
+      }
+      
+      const compositeKey = `${vchNo}|${gstin}`;
+      return !compositeKeySet.has(compositeKey);
     };
 
     const filtered = processedRows.filter(shouldKeep);
