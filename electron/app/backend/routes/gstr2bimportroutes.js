@@ -11,6 +11,8 @@ import {
   updateDisallowLedgerNames,
   tallyWithGstr2A,
   tallyWithPurchaseReg,
+  compareGstr2BWithGstr2ADownload,
+  compareGstr2BWithPurchaseRegDownload,
   deleteImport,
   uploadMiddleware,
 } from "../controllers/gstr2bimportcontroller.js";
@@ -20,7 +22,30 @@ const router = Router();
 
 router.post("/b2b", requireActiveSubscription, uploadMiddleware, importB2BSheet);
 router.get("/company/:companyId", getImportsByCompany);
-router.get("/:id", getImportById);
+
+// More specific routes must come before /:id route
+router.post(
+  "/:id/compare-with-gstr2a-download",
+  requireActiveSubscription,
+  compareGstr2BWithGstr2ADownload,
+);
+router.post(
+  "/:id/compare-with-purchase-reg-download",
+  requireActiveSubscription,
+  uploadMiddleware,
+  compareGstr2BWithPurchaseRegDownload,
+);
+router.post(
+  "/:id/tally-with-gstr2a",
+  requireActiveSubscription,
+  tallyWithGstr2A,
+);
+router.post(
+  "/:id/tally-with-purchase-reg",
+  requireActiveSubscription,
+  uploadMiddleware,
+  tallyWithPurchaseReg,
+);
 router.post("/:id/process", requireActiveSubscription, processB2BImport);
 router.get("/:id/processed", getProcessedFile);
 router.put(
@@ -43,17 +68,7 @@ router.put(
   requireActiveSubscription,
   updateDisallowLedgerNames,
 );
-router.post(
-  "/:id/tally-with-gstr2a",
-  requireActiveSubscription,
-  tallyWithGstr2A,
-);
-router.post(
-  "/:id/tally-with-purchase-reg",
-  requireActiveSubscription,
-  uploadMiddleware,
-  tallyWithPurchaseReg,
-);
+router.get("/:id", getImportById);
 router.delete("/:id", requireActiveSubscription, deleteImport);
 
 export default router;

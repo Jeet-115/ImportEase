@@ -13,6 +13,7 @@ import Gstr2AHistory from "./pages/Gstr2AHistory.jsx";
 import CompanyHistoryGstr2A from "./pages/CompanyHistoryGstr2A.jsx";
 import LedgerNameManager from "./pages/LedgerNameManager.jsx";
 import PartyMasterManager from "./pages/PartyMasterManager.jsx";
+import Comparisons from "./pages/Comparisons.jsx";
 import BackendStatusGate from "./components/BackendStatusGate.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -59,6 +60,7 @@ const AppShell = () => {
           />
           <Route path="/ledger-names" element={<LedgerNameManager />} />
           <Route path="/party-masters" element={<PartyMasterManager />} />
+          <Route path="/comparisons" element={<Comparisons />} />
         </Routes>
       </HashRouter>
     </>

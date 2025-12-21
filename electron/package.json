@@ -1,6 +1,6 @@
 {
   "name": "importease",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "ImportEase - Guided GSTR-2B & GSTR-2A to purchase register helper for CAs",
   "main": "app/main.js",
   "scripts": {
@@ -30,7 +30,8 @@
     "nodemailer": "^7.0.10",
     "pdfkit": "^0.17.2",
     "uuid": "^11.0.2",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "build": {
     "appId": "com.jeet115.importease",

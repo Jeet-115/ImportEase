@@ -1,5 +1,5 @@
 import multer from "multer";
-import XLSX from "xlsx";
+import XLSX from "xlsx-js-style";
 import {
   create as createGstrImport,
   findByCompany as findImportsByCompany,
@@ -18,6 +18,7 @@ import {
 } from "../models/processedfilemodel.js";
 import { findById as findGstr2AProcessedById } from "../models/processedfilemodel2a.js";
 import { processAndStoreDocument } from "../utils/gstr2bProcessor.js";
+import { findById as findGstr2BImportById } from "../models/gstr2bimportmodel.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -781,7 +782,7 @@ export const tallyWithGstr2A = async (req, res) => {
  * @param {string|number|null|undefined} value - The invoice number to normalize
  * @returns {string} - The normalized invoice number (first numeric segment, or largest numeric group if none found)
  */
-const normalizeInvoiceNumber = (value) => {
+export const normalizeInvoiceNumber = (value) => {
   if (value === null || value === undefined || value === "") {
     return "";
   }
@@ -839,7 +840,7 @@ const normalizeInvoiceNumber = (value) => {
   return cleaned;
 };
 
-const parsePurchaseRegisterExcel = (workbook) => {
+export const parsePurchaseRegisterExcel = (workbook) => {
   // Use first sheet
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) {
@@ -971,7 +972,7 @@ const parsePurchaseRegisterExcel = (workbook) => {
   return parsedRows;
 };
 
-const compareWithGstr2B = (purchaseRegisterRows, gstr2bProcessedRows) => {
+export const compareWithGstr2B = (purchaseRegisterRows, gstr2bProcessedRows) => {
   // Build composite key map from GSTR-2B: "NORMALIZED_VCHNO|GSTIN" -> row
   const gstr2bMap = new Map();
   (gstr2bProcessedRows || []).forEach((row) => {
@@ -1162,6 +1163,536 @@ export const tallyWithPurchaseReg = async (req, res) => {
     console.error("tallyWithPurchaseReg Error:", error);
     return res.status(500).json({
       message: error.message || "Failed to tally with Purchase Register",
+    });
+  }
+};
+
+/**
+ * Filter GSTR-2B rows that don't exist in GSTR-2A (download-only, no persistence)
+ * Uses invoice normalization for accurate matching
+ */
+const filterGstr2BByGstr2A = (gstr2bRows, gstr2aRows) => {
+  // Build composite key set from GSTR-2A using normalized invoice numbers
+  const compositeKeySet = new Set();
+  (gstr2aRows || []).forEach((row) => {
+    const normalizedVchNo = normalizeInvoiceNumber(row?.vchNo || "");
+    const gstin = String(row?.gstinUin || "").trim().toUpperCase();
+    
+    if (normalizedVchNo && gstin) {
+      const compositeKey = `${normalizedVchNo}|${gstin}`;
+      compositeKeySet.add(compositeKey);
+    }
+  });
+
+  if (!compositeKeySet.size) {
+    return {
+      processedRows: gstr2bRows.processedRows || [],
+      reverseChargeRows: gstr2bRows.reverseChargeRows || [],
+      mismatchedRows: gstr2bRows.mismatchedRows || [],
+      disallowRows: gstr2bRows.disallowRows || [],
+    };
+  }
+
+  // Filter function: keep row only if its composite key is NOT in the set
+  const shouldKeep = (row) => {
+    const normalizedVchNo = normalizeInvoiceNumber(row?.vchNo || "");
+    const gstin = String(row?.gstinUin || "").trim().toUpperCase();
+    
+    if (!normalizedVchNo || !gstin) {
+      return true; // Keep rows with missing data
+    }
+    
+    const compositeKey = `${normalizedVchNo}|${gstin}`;
+    return !compositeKeySet.has(compositeKey);
+  };
+
+  return {
+    processedRows: (gstr2bRows.processedRows || []).filter(shouldKeep),
+    reverseChargeRows: (gstr2bRows.reverseChargeRows || []).filter(shouldKeep),
+    mismatchedRows: (gstr2bRows.mismatchedRows || []).filter(shouldKeep),
+    disallowRows: (gstr2bRows.disallowRows || []).filter(shouldKeep),
+  };
+};
+
+/**
+ * Build GSTR-2B sheet from original rows
+ */
+const buildGstr2BSheet = (rows = []) => {
+  if (!rows.length) {
+    return XLSX.utils.aoa_to_sheet([["No GSTR-2B data available"]]);
+  }
+  const worksheetRows = rows.map((row) => {
+    const entry = {};
+    HEADER_SEQUENCE.forEach(({ key, label }) => {
+      entry[label] = row?.[key] ?? "";
+    });
+    return entry;
+  });
+  return XLSX.utils.json_to_sheet(worksheetRows);
+};
+
+/**
+ * Create sheet from rows with headers
+ */
+const createSheetFromRows = (rows = [], headers = []) => {
+  if (!rows.length) {
+    return XLSX.utils.aoa_to_sheet([["No data available"]]);
+  }
+  const normalizedHeaders = headers.length > 0 
+    ? headers 
+    : Object.keys(rows[0] || {});
+  const normalizedRows = rows.map((row) => {
+    const normalized = {};
+    normalizedHeaders.forEach((h) => {
+      normalized[h] = row?.[h] ?? "";
+    });
+    return normalized;
+  });
+  return XLSX.utils.json_to_sheet(normalizedRows, { header: normalizedHeaders });
+};
+
+/**
+ * Color map matching buildCombinedWorkbook.js
+ */
+const COLOR_MAP = {
+  green: "FFE4F8E5",
+  orange: "FFFFEAD6",
+  purple: "FFECE2FF",
+  red: "FFFFE0E0",
+  grand: "FFE0F2FF",
+  accept: "FFD6F5E3",
+  reject: "FFF9D6D6",
+  pending: "FFFFF5D6",
+  none: "FFF2F4F7",
+  actionGrand: "FFE3F0FF",
+};
+
+/**
+ * Apply row style (color) to a sheet row
+ */
+const applyRowStyle = (sheet, headers, rowIndex, color) => {
+  if (!color) return;
+  headers.forEach((_, colIdx) => {
+    const cellRef = XLSX.utils.encode_cell({ r: rowIndex + 1, c: colIdx });
+    let cell = sheet[cellRef];
+    if (!cell) {
+      cell = { t: "s", v: "" };
+      sheet[cellRef] = cell;
+    }
+    cell.s = {
+      ...cell.s,
+      fill: {
+        patternType: "solid",
+        fgColor: { rgb: color },
+      },
+    };
+  });
+};
+
+/**
+ * Build combined workbook matching buildCombinedWorkbook.js format
+ */
+const buildCombinedWorkbookBackend = ({
+  originalRows = [],
+  processedRows = [],
+  reverseChargeRows = [],
+  mismatchedRows = [],
+  disallowRows = [],
+  restSheets = [],
+  purchaseRegisterComparison = null,
+}) => {
+  const workbook = XLSX.utils.book_new();
+
+  // Sheet 1: GSTR-2B (original)
+  const gstrSheet = buildGstr2BSheet(originalRows);
+  XLSX.utils.book_append_sheet(workbook, gstrSheet, "GSTR2B");
+
+  // Sheet 2: Master (simplified - categories without complex totals)
+  // Build category rows similar to buildCombinedWorkbook
+  const masterRows = [];
+  const allRows = [
+    ...(processedRows || []),
+    ...(reverseChargeRows || []),
+    ...(mismatchedRows || []),
+    ...(disallowRows || []),
+  ];
+  
+  if (allRows.length > 0) {
+    const masterHeaders = ["Category", ...Object.keys(allRows[0] || {})];
+    
+    // Helper to check if row is in a collection
+    const isInCollection = (row, collection) => {
+      return collection.some((r) => {
+        const rowSig = `${r?.vchNo || ""}|${r?.gstinUin || ""}|${r?.supplierAmount || ""}`;
+        const checkSig = `${row?.vchNo || ""}|${row?.gstinUin || ""}|${row?.supplierAmount || ""}`;
+        return rowSig === checkSig;
+      });
+    };
+    
+    // Categorize rows
+    const greenRows = processedRows.filter((row) => {
+      const itcAvailability = row?.["ITC Availability"];
+      const isItcNo = itcAvailability === "No";
+      if (isItcNo) return false;
+      return !isInCollection(row, reverseChargeRows) && 
+             !isInCollection(row, mismatchedRows) && 
+             !isInCollection(row, disallowRows);
+    });
+    
+    const orangeRows = mismatchedRows.filter((row) => {
+      const itcAvailability = row?.["ITC Availability"];
+      const isItcNo = itcAvailability === "No";
+      return !isItcNo;
+    });
+    
+    const purpleRows = reverseChargeRows.filter((row) => {
+      const itcAvailability = row?.["ITC Availability"];
+      const isItcNo = itcAvailability === "No";
+      return !isItcNo;
+    });
+    
+    const redRows = [
+      ...disallowRows,
+      ...processedRows.filter((row) => {
+        const itcAvailability = row?.["ITC Availability"];
+        return itcAvailability === "No";
+      }),
+      ...reverseChargeRows.filter((row) => {
+        const itcAvailability = row?.["ITC Availability"];
+        return itcAvailability === "No";
+      }),
+      ...mismatchedRows.filter((row) => {
+        const itcAvailability = row?.["ITC Availability"];
+        return itcAvailability === "No";
+      }),
+    ];
+    
+    // Add rows with categories and track row styles
+    const masterRowStyles = new Map();
+    let currentRowIndex = 0;
+    
+    const addCategoryRows = (rows, categoryLabel, color) => {
+      rows.forEach((row) => {
+        const mapped = { Category: categoryLabel };
+        masterHeaders.forEach((header) => {
+          if (header !== "Category" && row && Object.prototype.hasOwnProperty.call(row, header)) {
+            mapped[header] = row[header];
+          }
+        });
+        masterRowStyles.set(currentRowIndex, color);
+        masterRows.push(mapped);
+        currentRowIndex++;
+      });
+      if (rows.length) {
+        masterRows.push({ Category: "" });
+        currentRowIndex++;
+      }
+    };
+    
+    addCategoryRows(greenRows, "Allowed (Green)", COLOR_MAP.green);
+    addCategoryRows(orangeRows, "Mismatched - Accept Credit No", COLOR_MAP.orange);
+    addCategoryRows(purpleRows, "RCM", COLOR_MAP.purple);
+    addCategoryRows(redRows, "Disallow", COLOR_MAP.red);
+    
+    if (masterRows.length > 0) {
+      const masterSheet = createSheetFromRows(masterRows, masterHeaders);
+      // Apply row styles
+      masterRowStyles.forEach((color, rowIndex) => {
+        applyRowStyle(masterSheet, masterHeaders, rowIndex, color);
+      });
+      XLSX.utils.book_append_sheet(workbook, masterSheet, "Master");
+    }
+  }
+
+  // Sheet 3: Processed
+  if (processedRows.length > 0) {
+    const processedHeaders = Object.keys(processedRows[0] || {});
+    const processedSheet = createSheetFromRows(processedRows, processedHeaders);
+    XLSX.utils.book_append_sheet(workbook, processedSheet, "Processed");
+  }
+
+  // Sheet 4: RCM
+  if (reverseChargeRows.length > 0) {
+    const rcmHeaders = Object.keys(reverseChargeRows[0] || {});
+    const rcmSheet = createSheetFromRows(reverseChargeRows, rcmHeaders);
+    XLSX.utils.book_append_sheet(workbook, rcmSheet, "RCM");
+  }
+
+  // Sheet 5: Mismatched
+  if (mismatchedRows.length > 0) {
+    const mismatchedHeaders = Object.keys(mismatchedRows[0] || {});
+    const mismatchedSheet = createSheetFromRows(mismatchedRows, mismatchedHeaders);
+    XLSX.utils.book_append_sheet(workbook, mismatchedSheet, "Mismatched");
+  }
+
+  // Sheet 6: Disallow
+  if (disallowRows.length > 0) {
+    const disallowHeaders = Object.keys(disallowRows[0] || {});
+    const disallowSheet = createSheetFromRows(disallowRows, disallowHeaders);
+    XLSX.utils.book_append_sheet(workbook, disallowSheet, "Disallow");
+  }
+
+  // Sheet 7: Rest Sheets (if any)
+  if (restSheets?.length) {
+    const restData = [];
+    restSheets.forEach(({ sheetName, headers = [], rows: sheetRows = [] }) => {
+      const normalizedHeaders = headers.length > 0
+        ? headers
+        : sheetRows.length > 0
+        ? Object.keys(sheetRows[0])
+        : [];
+      restData.push([sheetName || "Sheet"]);
+      if (normalizedHeaders.length) {
+        restData.push(normalizedHeaders);
+      } else {
+        restData.push(["No headers detected"]);
+      }
+      if (sheetRows.length) {
+        sheetRows.forEach((row) => {
+          if (normalizedHeaders.length) {
+            restData.push(
+              normalizedHeaders.map((header) => {
+                const value = row?.[header];
+                return value === null || value === undefined ? "" : value;
+              })
+            );
+          } else {
+            const values = Object.values(row || {});
+            restData.push(values.length ? values : [""]);
+          }
+        });
+      } else {
+        restData.push(["No data available"]);
+      }
+      restData.push([]);
+      restData.push([]);
+    });
+    if (restData.length) {
+      while (
+        restData.length &&
+        restData[restData.length - 1].length === 0
+      ) {
+        restData.pop();
+      }
+      const restSheet = XLSX.utils.aoa_to_sheet(restData);
+      XLSX.utils.book_append_sheet(workbook, restSheet, "Rest Sheets");
+    }
+  }
+
+  // Sheet 8: Purchase Register Comparison (if exists)
+  if (purchaseRegisterComparison) {
+    const { comparison } = purchaseRegisterComparison;
+    if (comparison) {
+      const { matched = [], missingInPR = [], missingInGstr2B = [] } = comparison;
+      
+      const headers = [
+        "Status",
+        "GSTR-2B Vch No",
+        "GSTR-2B GSTIN/UIN",
+        "GSTR-2B Supplier Amount",
+        "GSTR-2B Supplier Name",
+        "PR Supplier Invoice No",
+        "PR GSTIN/UIN",
+        "PR Gross Total",
+        "PR Date",
+        "PR Particulars",
+      ];
+      
+      const comparisonRows = [];
+      const comparisonRowStyles = [];
+      
+      // Matched rows (green)
+      matched.forEach(({ gstr2bRow, purchaseRegisterRow }) => {
+        comparisonRows.push({
+          Status: "Matched",
+          "GSTR-2B Vch No": gstr2bRow?.vchNo || "",
+          "GSTR-2B GSTIN/UIN": gstr2bRow?.gstinUin || "",
+          "GSTR-2B Supplier Amount": gstr2bRow?.supplierAmount || "",
+          "GSTR-2B Supplier Name": gstr2bRow?.supplierName || "",
+          "PR Supplier Invoice No": purchaseRegisterRow?.supplierInvoiceNo || "",
+          "PR GSTIN/UIN": purchaseRegisterRow?.gstinUin || "",
+          "PR Gross Total": purchaseRegisterRow?.grossTotal || "",
+          "PR Date": purchaseRegisterRow?.date || "",
+          "PR Particulars": purchaseRegisterRow?.particulars || "",
+        });
+        comparisonRowStyles.push(COLOR_MAP.green);
+      });
+      
+      // Missing in Purchase Register (red)
+      missingInPR.forEach(({ gstr2bRow }) => {
+        comparisonRows.push({
+          Status: "Missing in Purchase Register",
+          "GSTR-2B Vch No": gstr2bRow?.vchNo || "",
+          "GSTR-2B GSTIN/UIN": gstr2bRow?.gstinUin || "",
+          "GSTR-2B Supplier Amount": gstr2bRow?.supplierAmount || "",
+          "GSTR-2B Supplier Name": gstr2bRow?.supplierName || "",
+          "PR Supplier Invoice No": "",
+          "PR GSTIN/UIN": "",
+          "PR Gross Total": "",
+          "PR Date": "",
+          "PR Particulars": "",
+        });
+        comparisonRowStyles.push(COLOR_MAP.red);
+      });
+      
+      // Missing in GSTR-2B (orange)
+      missingInGstr2B.forEach(({ purchaseRegisterRow }) => {
+        comparisonRows.push({
+          Status: "Missing in GSTR-2B",
+          "GSTR-2B Vch No": "",
+          "GSTR-2B GSTIN/UIN": "",
+          "GSTR-2B Supplier Amount": "",
+          "GSTR-2B Supplier Name": "",
+          "PR Supplier Invoice No": purchaseRegisterRow?.supplierInvoiceNo || "",
+          "PR GSTIN/UIN": purchaseRegisterRow?.gstinUin || "",
+          "PR Gross Total": purchaseRegisterRow?.grossTotal || "",
+          "PR Date": purchaseRegisterRow?.date || "",
+          "PR Particulars": purchaseRegisterRow?.particulars || "",
+        });
+        comparisonRowStyles.push(COLOR_MAP.orange);
+      });
+
+      if (comparisonRows.length > 0) {
+        const comparisonSheet = XLSX.utils.json_to_sheet(comparisonRows, { header: headers });
+        // Apply color coding to rows
+        comparisonRowStyles.forEach((color, rowIndex) => {
+          applyRowStyle(comparisonSheet, headers, rowIndex, color);
+        });
+        XLSX.utils.book_append_sheet(workbook, comparisonSheet, "purchaseregcompared");
+      }
+    }
+  }
+
+  return workbook;
+};
+
+/**
+ * Download-only: Compare GSTR-2B with GSTR-2A and return Excel (no persistence)
+ */
+export const compareGstr2BWithGstr2ADownload = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { gstr2aId } = req.body || {};
+    
+    if (!gstr2aId) {
+      return res.status(400).json({ message: "gstr2aId is required" });
+    }
+
+    // Load GSTR-2B processed file
+    const processed2B = await findProcessedById(id);
+    if (!processed2B) {
+      return res.status(404).json({ message: "Processed GSTR-2B file not found" });
+    }
+
+    // Load GSTR-2B import (for original rows and restSheets)
+    const gstr2bImport = await findGstr2BImportById(id);
+    if (!gstr2bImport) {
+      return res.status(404).json({ message: "GSTR-2B import not found" });
+    }
+
+    // Load GSTR-2A processed file
+    const processed2A = await findGstr2AProcessedById(gstr2aId);
+    if (!processed2A) {
+      return res.status(404).json({ message: "Processed GSTR-2A file not found" });
+    }
+
+    // Filter GSTR-2B rows (download-only, no persistence)
+    const filtered = filterGstr2BByGstr2A(processed2B, processed2A.processedRows || []);
+
+    // Build Excel workbook matching buildCombinedWorkbook format
+    const workbook = buildCombinedWorkbookBackend({
+      originalRows: gstr2bImport.rows || [],
+      processedRows: filtered.processedRows,
+      reverseChargeRows: filtered.reverseChargeRows,
+      mismatchedRows: filtered.mismatchedRows,
+      disallowRows: filtered.disallowRows,
+      restSheets: gstr2bImport.restSheets || [],
+    });
+
+    // Convert to buffer
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    // Set response headers
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="GSTR-2B-Cleaned-${Date.now()}.xlsx"`);
+
+    return res.send(buffer);
+  } catch (error) {
+    console.error("compareGstr2BWithGstr2ADownload Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to compare GSTR-2B with GSTR-2A",
+    });
+  }
+};
+
+/**
+ * Download-only: Compare GSTR-2B with Purchase Register and return Excel (no persistence)
+ */
+export const compareGstr2BWithPurchaseRegDownload = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ message: "Purchase Register Excel file is required" });
+    }
+
+    // Load GSTR-2B processed file
+    const processed2B = await findProcessedById(id);
+    if (!processed2B) {
+      return res.status(404).json({ message: "Processed GSTR-2B file not found" });
+    }
+
+    // Load GSTR-2B import (for original rows and restSheets)
+    const gstr2bImport = await findGstr2BImportById(id);
+    if (!gstr2bImport) {
+      return res.status(404).json({ message: "GSTR-2B import not found" });
+    }
+
+    // Parse Purchase Register Excel
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const purchaseRegisterRows = parsePurchaseRegisterExcel(workbook);
+
+    if (!purchaseRegisterRows.length) {
+      return res.status(400).json({
+        message: "No valid rows found in Purchase Register Excel file",
+      });
+    }
+
+    // Compare with GSTR-2B processed rows
+    const comparison = compareWithGstr2B(
+      purchaseRegisterRows,
+      processed2B.processedRows || []
+    );
+
+    // Build comparison data structure
+    const purchaseRegisterComparison = {
+      purchaseRegisterRows,
+      comparison,
+      comparedAt: new Date().toISOString(),
+    };
+
+    // Build Excel workbook matching buildCombinedWorkbook format
+    const comparisonWorkbook = buildCombinedWorkbookBackend({
+      originalRows: gstr2bImport.rows || [],
+      processedRows: processed2B.processedRows || [],
+      reverseChargeRows: processed2B.reverseChargeRows || [],
+      mismatchedRows: processed2B.mismatchedRows || [],
+      disallowRows: processed2B.disallowRows || [],
+      restSheets: gstr2bImport.restSheets || [],
+      purchaseRegisterComparison,
+    });
+
+    // Convert to buffer
+    const buffer = XLSX.write(comparisonWorkbook, { type: "buffer", bookType: "xlsx" });
+
+    // Set response headers
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="GSTR-2B-vs-Purchase-Reg-${Date.now()}.xlsx"`);
+
+    return res.send(buffer);
+  } catch (error) {
+    console.error("compareGstr2BWithPurchaseRegDownload Error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to compare GSTR-2B with Purchase Register",
     });
   }
 };

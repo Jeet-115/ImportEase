@@ -6,6 +6,7 @@ import {
   FiLayers,
   FiSettings,
   FiUsers,
+  FiShuffle,
 } from "react-icons/fi";
 import logo from "/logo.png";
 import { useNavigate } from "react-router-dom";
@@ -88,6 +89,12 @@ const Home = () => {
               title: "Manage Party Masters",
               text: "Maintain party-wise details to help with consistent ledger selection.",
               action: () => navigate("/party-masters"),
+            },
+            {
+              icon: <FiShuffle />,
+              title: "Comparisons",
+              text: "Compare processed GSTR-2B with GSTR-2A or with a Purchase Register to identify missing or duplicate invoices.",
+              action: () => navigate("/comparisons"),
             },
           ].map(({ icon, title, text, action }) => (
             <button
