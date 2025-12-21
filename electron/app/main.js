@@ -106,6 +106,26 @@ const updaterState = {
 };
 
 const buildMenuTemplate = () => {
+  
+  const openDataFolder = async () => {
+    try {
+      if (!DATA_DIR) {
+        dialog.showErrorBox(
+          "Data Folder Not Ready",
+          "The application data folder has not been initialized yet."
+        );
+        return;
+      }
+  
+      await shell.openPath(DATA_DIR);
+    } catch (error) {
+      console.error("[data-folder] Failed to open:", error);
+      dialog.showErrorBox(
+        "Open Data Folder Failed",
+        "Unable to open ImportEase data folder."
+      );
+    }
+  };
   const helpItems = [
     {
       label: `Current version: ${updaterState.currentVersion}`,
@@ -189,8 +209,15 @@ const buildMenuTemplate = () => {
     },
     {
       label: "Help",
-      submenu: helpItems,
-    },
+      submenu: [
+        {
+          label: "Open Data Folder",
+          click: openDataFolder,
+        },
+        { type: "separator" },
+        ...helpItems,
+      ],
+    },    
   ];
 };
 
