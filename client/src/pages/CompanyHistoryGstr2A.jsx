@@ -35,6 +35,10 @@ import {
   appendManualRows as appendManualRowsApi,
 } from "../services/gstr2aservice";
 import {
+  fetchCarryForwardPending,
+  applyCarryForward,
+} from "../services/carryforwardservice";
+import {
   createLedgerName as createLedgerNameApi,
   fetchLedgerNames,
 } from "../services/ledgernameservice";
@@ -210,6 +214,14 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
   ] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [carryForwardPanel, setCarryForwardPanel] = useState({
+    open: false,
+    loading: false,
+    pendingRows: [],
+    selectedRows: new Set(),
+    applying: false,
+    error: "",
+  });
 
   const buildDownloadFilename = useCallback(
     (type, overrideName) => {
@@ -311,6 +323,101 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
       ]);
     }
   }, [ledgerModal.open, ledgerModal.importId]);
+
+  // Fetch carry-forward pending rows when processedDoc is loaded in modal
+  useEffect(() => {
+    if (!ledgerModal.open || !ledgerModal.importId || !companyId || !ledgerModal.processed) return;
+    
+    setCarryForwardPanel((prev) => ({ ...prev, loading: true, error: "" }));
+    
+    fetchCarryForwardPending(companyId, "GSTR2A", ledgerModal.importId)
+      .then(({ data }) => {
+        setCarryForwardPanel((prev) => ({
+          ...prev,
+          loading: false,
+          pendingRows: data.pendingRows || [],
+          open: (data.pendingRows || []).length > 0,
+        }));
+      })
+      .catch((error) => {
+        console.error("Failed to fetch carry-forward pending rows:", error);
+        setCarryForwardPanel((prev) => ({
+          ...prev,
+          loading: false,
+          error: error?.response?.data?.message || "Failed to load pending rows",
+        }));
+      });
+  }, [ledgerModal.open, ledgerModal.importId, ledgerModal.processed, companyId]);
+
+  // Handler to toggle row selection
+  const toggleCarryForwardSelection = useCallback((rowIndex) => {
+    setCarryForwardPanel((prev) => {
+      const newSelected = new Set(prev.selectedRows);
+      if (newSelected.has(rowIndex)) {
+        newSelected.delete(rowIndex);
+      } else {
+        newSelected.add(rowIndex);
+      }
+      return { ...prev, selectedRows: newSelected };
+    });
+  }, []);
+
+  // Handler to apply selected rows
+  const handleApplyCarryForward = useCallback(async () => {
+    if (!ledgerModal.importId || !carryForwardPanel.selectedRows.size) return;
+    
+    const selectedRows = Array.from(carryForwardPanel.selectedRows).map(
+      (idx) => carryForwardPanel.pendingRows[idx]
+    );
+    
+    setCarryForwardPanel((prev) => ({ ...prev, applying: true, error: "" }));
+    
+    try {
+      const { data } = await applyCarryForward(ledgerModal.importId, selectedRows, "GSTR2A");
+      
+      // Update processedCache
+      setProcessedCache((prev) => ({
+        ...prev,
+        [ledgerModal.importId]: data.processed,
+      }));
+      
+      // Update ledgerModal.processed
+      setLedgerModal((prev) => ({
+        ...prev,
+        processed: data.processed,
+      }));
+      
+      // Remove applied rows from pending list
+      setCarryForwardPanel((prev) => {
+        const newPendingRows = prev.pendingRows.filter(
+          (_, idx) => !prev.selectedRows.has(idx)
+        );
+        return {
+          ...prev,
+          pendingRows: newPendingRows,
+          selectedRows: new Set(),
+          applying: false,
+          open: newPendingRows.length > 0,
+        };
+      });
+      
+      setStatus({
+        type: "success",
+        message: `Added ${selectedRows.length} pending row(s) to current month.`,
+      });
+    } catch (error) {
+      console.error("Failed to apply carry-forward:", error);
+      setCarryForwardPanel((prev) => ({
+        ...prev,
+        applying: false,
+        error: error?.response?.data?.message || "Failed to add rows",
+      }));
+      setStatus({
+        type: "error",
+        message: error?.response?.data?.message || "Failed to add pending rows",
+      });
+    }
+  }, [ledgerModal.importId, carryForwardPanel.selectedRows, carryForwardPanel.pendingRows]);
 
   const ensureImportDoc = async (importId) => {
     if (importCache[importId]) return importCache[importId];
@@ -1799,6 +1906,128 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                 <FiX />
               </button>
             </header>
+            
+            {/* Carry-Forward Panel */}
+            {carryForwardPanel.open && ledgerModal.processed ? (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                    <FiRefreshCw className="text-blue-500" />
+                    Pending invoices from previous months
+                  </h4>
+                  <button
+                    onClick={() => setCarryForwardPanel((prev) => ({ ...prev, open: false }))}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    <FiX />
+                  </button>
+                </div>
+                
+                {carryForwardPanel.loading ? (
+                  <div className="text-xs text-slate-600 flex items-center gap-2">
+                    <FiRefreshCw className="animate-spin" />
+                    Loading pending rows...
+                  </div>
+                ) : carryForwardPanel.error ? (
+                  <div className="text-xs text-rose-600">{carryForwardPanel.error}</div>
+                ) : carryForwardPanel.pendingRows.length === 0 ? (
+                  <div className="text-xs text-slate-600">No pending rows from previous months.</div>
+                ) : (
+                  <>
+                    <p className="text-xs text-slate-600">
+                      {carryForwardPanel.pendingRows.length} pending invoice(s) found. Select the ones you want to add.
+                    </p>
+                    
+                    <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg bg-white">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 sticky top-0">
+                          <tr>
+                            <th className="px-2 py-1 text-left border-b">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  carryForwardPanel.pendingRows.length > 0 &&
+                                  carryForwardPanel.selectedRows.size === carryForwardPanel.pendingRows.length
+                                }
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setCarryForwardPanel((prev) => ({
+                                      ...prev,
+                                      selectedRows: new Set(prev.pendingRows.map((_, idx) => idx)),
+                                    }));
+                                  } else {
+                                    setCarryForwardPanel((prev) => ({
+                                      ...prev,
+                                      selectedRows: new Set(),
+                                    }));
+                                  }
+                                }}
+                                className="rounded"
+                              />
+                            </th>
+                            <th className="px-2 py-1 text-left border-b">Invoice No</th>
+                            <th className="px-2 py-1 text-left border-b">GSTIN</th>
+                            <th className="px-2 py-1 text-left border-b">Amount</th>
+                            <th className="px-2 py-1 text-left border-b">Original Month</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {carryForwardPanel.pendingRows.map((row, idx) => {
+                            const invoiceNo = row?.invoiceNumber || row?.vchNo || row?.referenceNo || "";
+                            const gstin = row?.gstin || row?.gstinUin || "";
+                            const amount = row?.invoiceValue || row?.supplierAmount || row?.invoiceAmount || 0;
+                            const originalMonth = row?._originalMonth || "Unknown";
+                            
+                            return (
+                              <tr key={idx} className="border-b hover:bg-slate-50">
+                                <td className="px-2 py-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={carryForwardPanel.selectedRows.has(idx)}
+                                    onChange={() => toggleCarryForwardSelection(idx)}
+                                    className="rounded"
+                                  />
+                                </td>
+                                <td className="px-2 py-1">{invoiceNo}</td>
+                                <td className="px-2 py-1">{gstin}</td>
+                                <td className="px-2 py-1">
+                                  {typeof amount === "number" ? amount.toLocaleString("en-IN") : amount}
+                                </td>
+                                <td className="px-2 py-1">{originalMonth}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-600">
+                        {carryForwardPanel.selectedRows.size} row(s) selected
+                      </span>
+                      <button
+                        onClick={handleApplyCarryForward}
+                        disabled={carryForwardPanel.applying || carryForwardPanel.selectedRows.size === 0}
+                        className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {carryForwardPanel.applying ? (
+                          <>
+                            <FiRefreshCw className="animate-spin" />
+                            Adding...
+                          </>
+                        ) : (
+                          <>
+                            <FiPlus />
+                            Add to Current Month
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
+            
             {/* Tabs */}
             <div className="flex flex-wrap gap-2 border-b border-amber-200">
               {ledgerModalTabConfigs.map(({ key, label, enabled, activeClass }) => (

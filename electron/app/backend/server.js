@@ -10,6 +10,7 @@ import gstr2AImportRoutes from "./routes/gstr2aimportroutes.js";
 import ledgerNameRoutes from "./routes/ledgernameroutes.js";
 import partyMasterRoutes from "./routes/partymasterroutes.js";
 import softwareAuthRoutes from "./routes/softwareAuthRoutes.js";
+import carryForwardRoutes from "./routes/carryforwardroutes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
@@ -64,6 +65,7 @@ app.use("/api/gstr2b-imports", softwareAuthGuard, gstr2BImportRoutes);
 app.use("/api/gstr2a-imports", softwareAuthGuard, gstr2AImportRoutes);
 app.use("/api/ledger-names", softwareAuthGuard, ledgerNameRoutes);
 app.use("/api/party-masters", softwareAuthGuard, partyMasterRoutes);
+app.use("/api/carry-forward", softwareAuthGuard, carryForwardRoutes);
 
 // Root route
 app.get("/", (req, res) => {
