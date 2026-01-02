@@ -9,7 +9,7 @@
 - `npm run dev:backend` — start the JSON-backed Express API.
 - `npm run dev:client` — start the Vite React client (talks to `http://localhost:5000`).
 - `npm run dev:electron` — launch the Electron shell pointing to the local client/backend.
-- `npm run dev` — run all three together via `concurrently`. 
+- `npm run dev` — run all three together via `concurrently`.
 
 ## Building / Packaging
 - `npm run dist` runs the Vite production build and then delegates to `npm run build:electron`.
