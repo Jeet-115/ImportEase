@@ -7,6 +7,8 @@ import {
   FiSettings,
   FiUsers,
   FiShuffle,
+  FiShoppingCart,
+  FiTrendingUp,
 } from "react-icons/fi";
 import logo from "/logo.png";
 import { useNavigate } from "react-router-dom";
@@ -46,6 +48,56 @@ const Home = () => {
           finally download a clean purchase register for Tally. Every screen
           explains the next step so non-technical users can follow along safely.
         </p>
+        
+        {/* Main Navigation: Purchase and Sales */}
+        <div className="grid gap-4 sm:grid-cols-2 mb-8">
+          <motion.button
+            onClick={() => {
+              // Scroll to purchase section or stay on page
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            className="rounded-3xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white p-6 text-left shadow-lg transition hover:-translate-y-1 hover:shadow-xl"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="flex items-center gap-4 mb-3">
+              <div className="rounded-2xl bg-amber-100 p-3">
+                <FiShoppingCart className="text-2xl text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Purchase</h2>
+                <p className="text-sm text-slate-600">Manage purchase operations</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600">
+              Access GSTR-2B & GSTR-2A imports, party masters, ledger names, and purchase register processing.
+            </p>
+          </motion.button>
+
+          <motion.button
+            onClick={() => navigate("/sales")}
+            className="rounded-3xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white p-6 text-left shadow-lg transition hover:-translate-y-1 hover:shadow-xl"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="flex items-center gap-4 mb-3">
+              <div className="rounded-2xl bg-amber-100 p-3">
+                <FiTrendingUp className="text-2xl text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Sales</h2>
+                <p className="text-sm text-slate-600">Manage sales operations</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600">
+              Manage sales party masters and ledger masters for your companies.
+            </p>
+          </motion.button>
+        </div>
+
+        <div className="border-t border-amber-100 pt-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Purchase Features</h3>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-left">
           {[
             {

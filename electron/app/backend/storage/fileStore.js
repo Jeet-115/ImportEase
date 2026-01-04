@@ -22,6 +22,8 @@ const COLLECTIONS = {
   processedFiles: { filename: "processedFiles.json", defaultValue: [] },
   gstr2aImports: { filename: "gstr2aImports.json", defaultValue: [] },
   processedFiles2A: { filename: "processedFiles2A.json", defaultValue: [] },
+  salesPartyMasters: { filename: "salesPartyMasters.json", defaultValue: [] },
+  salesLedgerMasters: { filename: "salesLedgerMasters.json", defaultValue: [] },
 };
 
 const locks = new Map();

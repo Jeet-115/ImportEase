@@ -14,6 +14,9 @@ import CompanyHistoryGstr2A from "./pages/CompanyHistoryGstr2A.jsx";
 import LedgerNameManager from "./pages/LedgerNameManager.jsx";
 import PartyMasterManager from "./pages/PartyMasterManager.jsx";
 import Comparisons from "./pages/Comparisons.jsx";
+import SalesHome from "./pages/SalesHome.jsx";
+import SalesPartyMaster from "./pages/SalesPartyMaster.jsx";
+import SalesLedgerMaster from "./pages/SalesLedgerMaster.jsx";
 import BackendStatusGate from "./components/BackendStatusGate.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -61,6 +64,9 @@ const AppShell = () => {
           <Route path="/ledger-names" element={<LedgerNameManager />} />
           <Route path="/party-masters" element={<PartyMasterManager />} />
           <Route path="/comparisons" element={<Comparisons />} />
+          <Route path="/sales" element={<SalesHome />} />
+          <Route path="/sales/party-master/:companyId" element={<SalesPartyMaster />} />
+          <Route path="/sales/ledger-master" element={<SalesLedgerMaster />} />
         </Routes>
       </HashRouter>
     </>
