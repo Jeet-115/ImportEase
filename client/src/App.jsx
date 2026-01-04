@@ -17,6 +17,12 @@ import Comparisons from "./pages/Comparisons.jsx";
 import SalesHome from "./pages/SalesHome.jsx";
 import SalesPartyMaster from "./pages/SalesPartyMaster.jsx";
 import SalesLedgerMaster from "./pages/SalesLedgerMaster.jsx";
+import InventoryHome from "./pages/InventoryHome.jsx";
+import UnitsMaster from "./pages/UnitsMaster.jsx";
+import StockGroups from "./pages/StockGroups.jsx";
+import StockCategories from "./pages/StockCategories.jsx";
+import Godowns from "./pages/Godowns.jsx";
+import StockItems from "./pages/StockItems.jsx";
 import BackendStatusGate from "./components/BackendStatusGate.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -67,6 +73,12 @@ const AppShell = () => {
           <Route path="/sales" element={<SalesHome />} />
           <Route path="/sales/party-master/:companyId" element={<SalesPartyMaster />} />
           <Route path="/sales/ledger-master" element={<SalesLedgerMaster />} />
+          <Route path="/inventory" element={<InventoryHome />} />
+          <Route path="/inventory/:companyId/units" element={<UnitsMaster />} />
+          <Route path="/inventory/:companyId/groups" element={<StockGroups />} />
+          <Route path="/inventory/:companyId/categories" element={<StockCategories />} />
+          <Route path="/inventory/:companyId/godowns" element={<Godowns />} />
+          <Route path="/inventory/:companyId/items" element={<StockItems />} />
         </Routes>
       </HashRouter>
     </>

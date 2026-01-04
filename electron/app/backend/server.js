@@ -13,6 +13,11 @@ import softwareAuthRoutes from "./routes/softwareAuthRoutes.js";
 import carryForwardRoutes from "./routes/carryforwardroutes.js";
 import salesPartyRoutes from "./routes/salespartyroutes.js";
 import salesLedgerRoutes from "./routes/salesledgerroutes.js";
+import unitsRoutes from "./inventory/units/routes.js";
+import groupsRoutes from "./inventory/groups/routes.js";
+import categoriesRoutes from "./inventory/categories/routes.js";
+import godownsRoutes from "./inventory/godowns/routes.js";
+import itemsRoutes from "./inventory/items/routes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
@@ -70,6 +75,11 @@ app.use("/api/party-masters", softwareAuthGuard, partyMasterRoutes);
 app.use("/api/carry-forward", softwareAuthGuard, carryForwardRoutes);
 app.use("/api/sales/party", softwareAuthGuard, salesPartyRoutes);
 app.use("/api/sales/ledger", softwareAuthGuard, salesLedgerRoutes);
+app.use("/api/inventory/:companyId/units", softwareAuthGuard, unitsRoutes);
+app.use("/api/inventory/:companyId/groups", softwareAuthGuard, groupsRoutes);
+app.use("/api/inventory/:companyId/categories", softwareAuthGuard, categoriesRoutes);
+app.use("/api/inventory/:companyId/godowns", softwareAuthGuard, godownsRoutes);
+app.use("/api/inventory/:companyId/items", softwareAuthGuard, itemsRoutes);
 
 // Root route
 app.get("/", (req, res) => {

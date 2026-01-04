@@ -9,6 +9,7 @@ import {
   FiShuffle,
   FiShoppingCart,
   FiTrendingUp,
+  FiPackage,
 } from "react-icons/fi";
 import logo from "/logo.png";
 import { useNavigate } from "react-router-dom";
@@ -49,8 +50,8 @@ const Home = () => {
           explains the next step so non-technical users can follow along safely.
         </p>
         
-        {/* Main Navigation: Purchase and Sales */}
-        <div className="grid gap-4 sm:grid-cols-2 mb-8">
+        {/* Main Navigation: Purchase, Sales, and Inventory */}
+        <div className="grid gap-4 sm:grid-cols-3 mb-8">
           <motion.button
             onClick={() => {
               // Scroll to purchase section or stay on page
@@ -91,6 +92,26 @@ const Home = () => {
             </div>
             <p className="text-sm text-slate-600">
               Manage sales party masters and ledger masters for your companies.
+            </p>
+          </motion.button>
+
+          <motion.button
+            onClick={() => navigate("/inventory")}
+            className="rounded-3xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white p-6 text-left shadow-lg transition hover:-translate-y-1 hover:shadow-xl"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="flex items-center gap-4 mb-3">
+              <div className="rounded-2xl bg-amber-100 p-3">
+                <FiPackage className="text-2xl text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Inventory</h2>
+                <p className="text-sm text-slate-600">Manage inventory masters</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600">
+              Manage units, stock groups, categories, godowns, and stock items for your companies.
             </p>
           </motion.button>
         </div>
