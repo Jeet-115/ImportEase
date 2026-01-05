@@ -335,3 +335,21 @@ export const getPurchaseBillsPending = (companyId) =>
 export const getJobworkOutstanding = (companyId) =>
   axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/jobwork-outstanding`);
 
+// ============================================
+// Phase-4: Valuation & Profit Engine
+// ============================================
+
+// Stock valuation summary by method (FIFO / AVG / LAST / STD)
+export const getValuationStockSummary = (companyId, method) =>
+  axiosInstance.get(`/api/inventory/${companyId}/valuation/stock-summary`, {
+    params: { method },
+  });
+
+// Detailed valuation for a single item (all methods side by side)
+export const getItemValuation = (companyId, itemId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/valuation/item/${itemId}/valuation`);
+
+// Profit report based on FIFO COGS
+export const getProfitReport = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/valuation/profit-report`);
+

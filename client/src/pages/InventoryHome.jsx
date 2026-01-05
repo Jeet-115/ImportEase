@@ -487,6 +487,23 @@ const InventoryHome = () => {
                     View stock summary, batch, godown reports
                   </p>
                 </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("valuation/profit-report")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiTrendingUp className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Profit Report
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Analyze profit on sales using FIFO COGS
+                  </p>
+                </motion.button>
               </div>
             </motion.section>
           </>

@@ -25,6 +25,9 @@ import Godowns from "./pages/Godowns.jsx";
 import StockItems from "./pages/StockItems.jsx";
 import InventoryFeatures from "./pages/InventoryFeatures.jsx";
 import InventoryVoucher from "./pages/InventoryVoucher.jsx";
+import StockSummaryValuation from "./pages/StockSummaryValuation.jsx";
+import ItemValuation from "./pages/ItemValuation.jsx";
+import ProfitReport from "./pages/ProfitReport.jsx";
 import BackendStatusGate from "./components/BackendStatusGate.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -87,7 +90,24 @@ const AppShell = () => {
           <Route path="/inventory/:companyId/cost-tracking" element={<InventoryFeatures />} />
           <Route path="/inventory/:companyId/job-work" element={<InventoryFeatures />} />
           <Route path="/inventory/:companyId/vouchers/:voucherType" element={<InventoryVoucher />} />
-          <Route path="/inventory/:companyId/reports/:reportType" element={<InventoryFeatures />} />
+          {/* Phase-4 valuation & profit views */}
+          <Route
+            path="/inventory/:companyId/valuation/stock-summary"
+            element={<StockSummaryValuation />}
+          />
+          <Route
+            path="/inventory/:companyId/valuation/item/:itemId"
+            element={<ItemValuation />}
+          />
+          <Route
+            path="/inventory/:companyId/valuation/profit-report"
+            element={<ProfitReport />}
+          />
+          {/* Backwards-compatible alias from Phase-3 navigation */}
+          <Route
+            path="/inventory/:companyId/reports/stock-summary"
+            element={<StockSummaryValuation />}
+          />
         </Routes>
       </HashRouter>
     </>

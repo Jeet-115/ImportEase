@@ -41,6 +41,7 @@ import materialInRoutes from "./inventory/ledger/vouchers/materialIn/routes.js";
 import materialOutRoutes from "./inventory/ledger/vouchers/materialOut/routes.js";
 import physicalStockRoutes from "./inventory/ledger/vouchers/physicalStock/routes.js";
 import ledgerReportsRoutes from "./inventory/ledger/reports/routes.js";
+import valuationRoutes from "./inventory/valuation/routes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
@@ -127,6 +128,7 @@ app.use("/api/inventory/:companyId/material-in", softwareAuthGuard, materialInRo
 app.use("/api/inventory/:companyId/material-out", softwareAuthGuard, materialOutRoutes);
 app.use("/api/inventory/:companyId/physical-stock", softwareAuthGuard, physicalStockRoutes);
 app.use("/api/inventory/:companyId/ledger/reports", softwareAuthGuard, ledgerReportsRoutes);
+app.use("/api/inventory/:companyId/valuation", softwareAuthGuard, valuationRoutes);
 
 // Root route
 app.get("/", (req, res) => {
