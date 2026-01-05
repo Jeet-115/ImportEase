@@ -42,6 +42,15 @@ import materialOutRoutes from "./inventory/ledger/vouchers/materialOut/routes.js
 import physicalStockRoutes from "./inventory/ledger/vouchers/physicalStock/routes.js";
 import ledgerReportsRoutes from "./inventory/ledger/reports/routes.js";
 import valuationRoutes from "./inventory/valuation/routes.js";
+// Phase-5: Accounting & Sales/Purchase Engine
+import accountingPartyRoutes from "./accounting/masters/partyRoutes.js";
+import salesWizardRoutes from "./accounting/sales/salesWizardRoutes.js";
+import purchaseWizardRoutes from "./accounting/purchase/purchaseWizardRoutes.js";
+import orderRoutes from "./accounting/orders/orderRoutes.js";
+import interestRoutes from "./accounting/interest/interestRoutes.js";
+import scenarioRoutes from "./accounting/scenarios/scenarioRoutes.js";
+import budgetRoutes from "./accounting/budgets/budgetRoutes.js";
+import outstandingRoutes from "./accounting/outstanding/outstandingRoutes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
@@ -129,6 +138,15 @@ app.use("/api/inventory/:companyId/material-out", softwareAuthGuard, materialOut
 app.use("/api/inventory/:companyId/physical-stock", softwareAuthGuard, physicalStockRoutes);
 app.use("/api/inventory/:companyId/ledger/reports", softwareAuthGuard, ledgerReportsRoutes);
 app.use("/api/inventory/:companyId/valuation", softwareAuthGuard, valuationRoutes);
+// Phase-5: Accounting & Sales/Purchase Engine
+app.use("/api/accounting/:companyId/masters/parties", softwareAuthGuard, accountingPartyRoutes);
+app.use("/api/accounting/:companyId/sales", softwareAuthGuard, salesWizardRoutes);
+app.use("/api/accounting/:companyId/purchase", softwareAuthGuard, purchaseWizardRoutes);
+app.use("/api/accounting/:companyId/orders", softwareAuthGuard, orderRoutes);
+app.use("/api/accounting/:companyId/interest", softwareAuthGuard, interestRoutes);
+app.use("/api/accounting/:companyId/scenarios", softwareAuthGuard, scenarioRoutes);
+app.use("/api/accounting/:companyId/budgets", softwareAuthGuard, budgetRoutes);
+app.use("/api/accounting/:companyId/outstanding", softwareAuthGuard, outstandingRoutes);
 
 // Root route
 app.get("/", (req, res) => {

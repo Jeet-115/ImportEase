@@ -1,26 +1,18 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
-  FiShoppingCart,
+  FiShoppingBag,
   FiFileText,
   FiDollarSign,
-  FiTrendingUp,
-  FiBarChart2,
+  FiTrendingDown,
   FiRefreshCw,
-  FiPlus,
+  FiUpload,
 } from "react-icons/fi";
 import { useNavigate, useParams } from "react-router-dom";
 import BackButton from "../components/BackButton.jsx";
 import { fetchCompanyMasterById } from "../services/companymasterservices.js";
-import {
-  createSalesWizard,
-  getPendingOrders,
-  getAllOutstanding,
-  getPartyOutstandingSummary,
-} from "../services/accountingService.js";
-import { getProfitReport } from "../services/inventoryService.js";
 
-const SalesHome = () => {
+const PurchaseHome = () => {
   const { companyId } = useParams();
   const navigate = useNavigate();
   const [company, setCompany] = useState(null);
@@ -60,44 +52,44 @@ const SalesHome = () => {
 
   const menuItems = [
     {
-      id: "guided-sales",
-      title: "Guided Sales",
-      description: "Create sales with auto-pricing, credit validation, and profit calculation",
-      icon: <FiShoppingCart className="text-2xl" />,
-      path: "sales/wizard",
+      id: "gst2b-import",
+      title: "GST-2B Import",
+      description: "Import purchase bills from GST-2B data",
+      icon: <FiUpload className="text-2xl" />,
+      path: "purchase/gst2b",
+      color: "blue",
+    },
+    {
+      id: "guided-purchase",
+      title: "Guided Purchase",
+      description: "Create purchase bills with GST matching and ITC tracking",
+      icon: <FiShoppingBag className="text-2xl" />,
+      path: "purchase/wizard",
       color: "emerald",
     },
     {
-      id: "sales-orders",
-      title: "Sales Orders",
-      description: "Manage sales orders and track deliveries",
+      id: "purchase-bills",
+      title: "Purchase Bills",
+      description: "View and manage purchase vouchers",
       icon: <FiFileText className="text-2xl" />,
-      path: "sales/orders",
-      color: "blue",
+      path: "purchase/bills",
+      color: "purple",
     },
     {
       id: "outstanding",
       title: "Outstanding",
-      description: "View party-wise outstanding bills and overdue amounts",
+      description: "View party-wise outstanding purchase bills",
       icon: <FiDollarSign className="text-2xl" />,
-      path: "sales/outstanding",
+      path: "purchase/outstanding",
       color: "amber",
     },
     {
-      id: "profit",
-      title: "Profit Report",
-      description: "Analyze profit per sales transaction using FIFO COGS",
-      icon: <FiTrendingUp className="text-2xl" />,
-      path: "sales/profit",
+      id: "itc",
+      title: "ITC Report",
+      description: "Input Tax Credit eligibility and tracking",
+      icon: <FiTrendingDown className="text-2xl" />,
+      path: "purchase/itc",
       color: "green",
-    },
-    {
-      id: "gstr1",
-      title: "GSTR-1",
-      description: "Generate GSTR-1 report for sales",
-      icon: <FiBarChart2 className="text-2xl" />,
-      path: "sales/gstr1",
-      color: "purple",
     },
   ];
 
@@ -124,13 +116,13 @@ const SalesHome = () => {
           animate={{ y: 0, opacity: 1 }}
         >
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-sky-500">
-            Phase-5: Sales Engine
+            Phase-5: Purchase Engine
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
-            Sales Home ({company?.companyName || "Loading..."})
+            Purchase Home ({company?.companyName || "Loading..."})
           </h1>
           <p className="text-base text-slate-600">
-            Guided sales with credit control, auto-pricing, and FIFO profit tracking.
+            Guided purchases with GST matching, ITC tracking, and cost allocation.
           </p>
         </motion.header>
 
@@ -171,4 +163,4 @@ const SalesHome = () => {
   );
 };
 
-export default SalesHome;
+export default PurchaseHome;

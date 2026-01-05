@@ -28,6 +28,7 @@ import InventoryVoucher from "./pages/InventoryVoucher.jsx";
 import StockSummaryValuation from "./pages/StockSummaryValuation.jsx";
 import ItemValuation from "./pages/ItemValuation.jsx";
 import ProfitReport from "./pages/ProfitReport.jsx";
+import PurchaseHome from "./pages/PurchaseHome.jsx";
 import BackendStatusGate from "./components/BackendStatusGate.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -108,6 +109,9 @@ const AppShell = () => {
             path="/inventory/:companyId/reports/stock-summary"
             element={<StockSummaryValuation />}
           />
+          {/* Phase-5: Accounting & Sales/Purchase Engine */}
+          <Route path="/accounting/:companyId/sales" element={<SalesHome />} />
+          <Route path="/accounting/:companyId/purchase" element={<PurchaseHome />} />
         </Routes>
       </HashRouter>
     </>
