@@ -57,7 +57,12 @@ const readInventoryFile = async (companyId, filename, defaultValue = []) => {
     if (!raw.trim()) {
       return Array.isArray(defaultValue) ? [...defaultValue] : { ...defaultValue };
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // If file exists but is empty array and we expect an object, return default object
+    if (Array.isArray(parsed) && parsed.length === 0 && typeof defaultValue === "object" && !Array.isArray(defaultValue)) {
+      return { ...defaultValue };
+    }
+    return parsed;
   } catch (error) {
     if (error.code === "ENOENT") {
       // File doesn't exist, create it with default value
@@ -109,4 +114,7 @@ export const mutateInventoryCollection = (companyId, collectionName, mutator) =>
     return outcome.result ?? nextData;
   });
 };
+
+// Export file-level functions for special cases (like features.json which is an object, not array)
+export { readInventoryFile, writeInventoryFile, getCompanyInventoryPath, ensureCompanyInventoryDir };
 

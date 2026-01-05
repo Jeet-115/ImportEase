@@ -1,6 +1,19 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { FiFileText, FiRefreshCw, FiPackage, FiLayers, FiTag, FiMapPin, FiBox } from "react-icons/fi";
+import {
+  FiFileText,
+  FiRefreshCw,
+  FiPackage,
+  FiLayers,
+  FiTag,
+  FiMapPin,
+  FiBox,
+  FiSettings,
+  FiAlertCircle,
+  FiDollarSign,
+  FiTrendingUp,
+  FiBriefcase,
+} from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import BackButton from "../components/BackButton.jsx";
 import { fetchCompanyMasters } from "../services/companymasterservices.js";
@@ -46,6 +59,17 @@ const InventoryHome = () => {
       return;
     }
     navigate(`/inventory/${selectedCompany._id}/${masterType}`);
+  };
+
+  const handlePhase2Click = (path) => {
+    if (!selectedCompany) {
+      setStatus({
+        type: "error",
+        message: "Please select a company first.",
+      });
+      return;
+    }
+    navigate(`/inventory/${selectedCompany._id}/${path}`);
   };
 
   const masterButtons = [
@@ -99,10 +123,10 @@ const InventoryHome = () => {
             Inventory Module
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
-            Inventory Foundation Masters
+            Inventory Management
           </h1>
           <p className="text-base text-slate-600">
-            Manage units, groups, categories, godowns, and stock items for your companies.
+            Manage inventory masters, features, rules, and advanced tracking for your companies.
           </p>
         </motion.header>
 
@@ -167,30 +191,134 @@ const InventoryHome = () => {
         </motion.section>
 
         {selectedCompany && (
-          <motion.section
-            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.1 }}
-          >
-            {masterButtons.map((master) => (
-              <motion.button
-                key={master.id}
-                onClick={() => handleMasterClick(master.id)}
-                className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="flex items-center gap-3 text-amber-600 mb-3">
-                  {master.icon}
-                  <span className="text-lg font-semibold text-slate-900">
-                    {master.title}
-                  </span>
-                </div>
-                <p className="text-sm text-slate-600">{master.description}</p>
-              </motion.button>
-            ))}
-          </motion.section>
+          <>
+            <motion.section
+              className="space-y-4"
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.1 }}
+            >
+              <h2 className="text-lg font-semibold text-slate-900">
+                Phase-1: Foundation Masters
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {masterButtons.map((master) => (
+                  <motion.button
+                    key={master.id}
+                    onClick={() => handleMasterClick(master.id)}
+                    className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <div className="flex items-center gap-3 text-amber-600 mb-3">
+                      {master.icon}
+                      <span className="text-lg font-semibold text-slate-900">
+                        {master.title}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-600">{master.description}</p>
+                  </motion.button>
+                ))}
+              </div>
+            </motion.section>
+
+            <motion.section
+              className="space-y-4"
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+            >
+              <h2 className="text-lg font-semibold text-slate-900">
+                Phase-2: Inventory Rules & Advanced Features
+              </h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <motion.button
+                  onClick={() => handlePhase2Click("features")}
+                  className="rounded-3xl border border-blue-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-blue-600 mb-3">
+                    <FiSettings className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Inventory Features
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Configure global inventory features and capabilities
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase2Click("reorder-alerts")}
+                  className="rounded-3xl border border-blue-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-blue-600 mb-3">
+                    <FiAlertCircle className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Reorder Alerts
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    View items below reorder level
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase2Click("price-lists")}
+                  className="rounded-3xl border border-blue-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-blue-600 mb-3">
+                    <FiDollarSign className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Price Lists
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Manage price levels and item pricing
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase2Click("cost-tracking")}
+                  className="rounded-3xl border border-blue-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-blue-600 mb-3">
+                    <FiTrendingUp className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Cost Tracking
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Track costs per item and party
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase2Click("job-work")}
+                  className="rounded-3xl border border-blue-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-blue-600 mb-3">
+                    <FiBriefcase className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Job Work
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Manage job work orders and material movements
+                  </p>
+                </motion.button>
+              </div>
+            </motion.section>
+          </>
         )}
 
         {!selectedCompany && (

@@ -12,6 +12,9 @@ export const findById = async (companyId, id) => {
   return items.find((item) => item.id === id) || null;
 };
 
+// Alias for consistency
+export const getStockItemById = findById;
+
 export const create = async (companyId, payload) =>
   mutateInventoryCollection(companyId, "items", (items) => {
     const now = new Date().toISOString();

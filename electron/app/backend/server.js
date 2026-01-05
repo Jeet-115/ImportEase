@@ -18,6 +18,15 @@ import groupsRoutes from "./inventory/groups/routes.js";
 import categoriesRoutes from "./inventory/categories/routes.js";
 import godownsRoutes from "./inventory/godowns/routes.js";
 import itemsRoutes from "./inventory/items/routes.js";
+import featuresRoutes from "./inventory/features/routes.js";
+import batchesRoutes from "./inventory/batches/routes.js";
+import bomsRoutes from "./inventory/boms/routes.js";
+import reorderRoutes from "./inventory/reorder/routes.js";
+import pricingRoutes from "./inventory/pricing/routes.js";
+import costTracksRoutes from "./inventory/costTracks/routes.js";
+import jobOrdersRoutes from "./inventory/jobOrders/routes.js";
+import materialMovementsRoutes from "./inventory/materialMovements/routes.js";
+import jobworkReportsRoutes from "./inventory/jobwork/routes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
@@ -80,6 +89,15 @@ app.use("/api/inventory/:companyId/groups", softwareAuthGuard, groupsRoutes);
 app.use("/api/inventory/:companyId/categories", softwareAuthGuard, categoriesRoutes);
 app.use("/api/inventory/:companyId/godowns", softwareAuthGuard, godownsRoutes);
 app.use("/api/inventory/:companyId/items", softwareAuthGuard, itemsRoutes);
+app.use("/api/inventory/:companyId/features", softwareAuthGuard, featuresRoutes);
+app.use("/api/inventory/:companyId/batches", softwareAuthGuard, batchesRoutes);
+app.use("/api/inventory/:companyId/boms", softwareAuthGuard, bomsRoutes);
+app.use("/api/inventory/:companyId/reorder", softwareAuthGuard, reorderRoutes);
+app.use("/api/inventory/:companyId/pricing", softwareAuthGuard, pricingRoutes);
+app.use("/api/inventory/:companyId/cost-tracks", softwareAuthGuard, costTracksRoutes);
+app.use("/api/inventory/:companyId/job-orders", softwareAuthGuard, jobOrdersRoutes);
+app.use("/api/inventory/:companyId/material-movements", softwareAuthGuard, materialMovementsRoutes);
+app.use("/api/inventory/:companyId/jobwork", softwareAuthGuard, jobworkReportsRoutes);
 
 // Root route
 app.get("/", (req, res) => {

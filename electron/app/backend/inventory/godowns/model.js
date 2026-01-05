@@ -12,6 +12,9 @@ export const findById = async (companyId, id) => {
   return godowns.find((godown) => godown.id === id) || null;
 };
 
+// Alias for consistency
+export const getGodownById = findById;
+
 export const create = async (companyId, payload) =>
   mutateInventoryCollection(companyId, "godowns", (godowns) => {
     const now = new Date().toISOString();

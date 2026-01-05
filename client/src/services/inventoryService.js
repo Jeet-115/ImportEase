@@ -86,3 +86,166 @@ export const updateItem = (companyId, id, data) =>
 export const deleteItem = (companyId, id) =>
   axiosInstance.delete(`${getBaseUrl(companyId, "items")}/${id}`);
 
+// Features
+export const getInventoryFeatures = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/features`);
+
+export const updateInventoryFeatures = (companyId, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/features`, data);
+
+// Batches
+export const getBatches = (companyId, itemId) => {
+  const url = `/api/inventory/${companyId}/batches`;
+  return axiosInstance.get(url, { params: itemId ? { itemId } : {} });
+};
+
+export const getBatchById = (companyId, id) =>
+  axiosInstance.get(`/api/inventory/${companyId}/batches/${id}`);
+
+export const createBatch = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/batches`, data);
+
+export const updateBatch = (companyId, id, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/batches/${id}`, data);
+
+export const deleteBatch = (companyId, id) =>
+  axiosInstance.delete(`/api/inventory/${companyId}/batches/${id}`);
+
+// BOMs
+export const getBOMs = (companyId, itemId, type) => {
+  const url = `/api/inventory/${companyId}/boms`;
+  return axiosInstance.get(url, { params: { itemId, type } });
+};
+
+export const getBOMById = (companyId, id) =>
+  axiosInstance.get(`/api/inventory/${companyId}/boms/${id}`);
+
+export const createBOM = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/boms`, data);
+
+export const updateBOM = (companyId, id, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/boms/${id}`, data);
+
+export const deleteBOM = (companyId, id) =>
+  axiosInstance.delete(`/api/inventory/${companyId}/boms/${id}`);
+
+// Reorder
+export const getReorderAlerts = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/reorder/alerts`);
+
+// Pricing
+export const getPricing = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/pricing`);
+
+export const updatePricing = (companyId, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/pricing`, data);
+
+export const addPriceLevel = (companyId, levelName) =>
+  axiosInstance.post(`/api/inventory/${companyId}/pricing/levels`, { levelName });
+
+export const removePriceLevel = (companyId, levelName) =>
+  axiosInstance.delete(`/api/inventory/${companyId}/pricing/levels`, { data: { levelName } });
+
+export const setItemPrice = (companyId, itemId, level, rate) =>
+  axiosInstance.post(`/api/inventory/${companyId}/pricing/prices`, { itemId, level, rate });
+
+export const removeItemPrice = (companyId, itemId, level) =>
+  axiosInstance.delete(`/api/inventory/${companyId}/pricing/prices`, { data: { itemId, level } });
+
+// Cost Tracks
+export const getCostTracks = (companyId, itemId, partyId, status) => {
+  const url = `/api/inventory/${companyId}/cost-tracks`;
+  return axiosInstance.get(url, { params: { itemId, partyId, status } });
+};
+
+export const getCostTrackById = (companyId, id) =>
+  axiosInstance.get(`/api/inventory/${companyId}/cost-tracks/${id}`);
+
+export const getCostSummary = (companyId, groupBy) =>
+  axiosInstance.get(`/api/inventory/${companyId}/cost-tracks/summary`, { params: { groupBy } });
+
+export const getCostTrackBreakup = (companyId, id) =>
+  axiosInstance.get(`/api/inventory/${companyId}/cost-tracks/${id}/breakup`);
+
+export const createCostTrack = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/cost-tracks`, data);
+
+export const updateCostTrack = (companyId, id, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/cost-tracks/${id}`, data);
+
+export const addMovementToTrack = (companyId, trackId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/cost-tracks/${trackId}/movements`, data);
+
+export const closeCostTrack = (companyId, id) =>
+  axiosInstance.post(`/api/inventory/${companyId}/cost-tracks/${id}/close`);
+
+export const openCostTrack = (companyId, id) =>
+  axiosInstance.post(`/api/inventory/${companyId}/cost-tracks/${id}/open`);
+
+export const deleteCostTrack = (companyId, id) =>
+  axiosInstance.delete(`/api/inventory/${companyId}/cost-tracks/${id}`);
+
+// Job Orders
+export const getJobOrders = (companyId, partyId, type, status) => {
+  const url = `/api/inventory/${companyId}/job-orders`;
+  return axiosInstance.get(url, { params: { partyId, type, status } });
+};
+
+export const getJobOrderById = (companyId, id) =>
+  axiosInstance.get(`/api/inventory/${companyId}/job-orders/${id}`);
+
+export const createJobOrder = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/job-orders`, data);
+
+export const updateJobOrder = (companyId, id, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/job-orders/${id}`, data);
+
+export const closeJobOrder = (companyId, id) =>
+  axiosInstance.post(`/api/inventory/${companyId}/job-orders/${id}/close`);
+
+export const openJobOrder = (companyId, id) =>
+  axiosInstance.post(`/api/inventory/${companyId}/job-orders/${id}/open`);
+
+export const deleteJobOrder = (companyId, id) =>
+  axiosInstance.delete(`/api/inventory/${companyId}/job-orders/${id}`);
+
+// Material Movements
+export const getMaterialMovements = (companyId, jobOrderId, type, direction) => {
+  const url = `/api/inventory/${companyId}/material-movements`;
+  return axiosInstance.get(url, { params: { jobOrderId, type, direction } });
+};
+
+export const getMaterialMovementById = (companyId, id) =>
+  axiosInstance.get(`/api/inventory/${companyId}/material-movements/${id}`);
+
+export const createMaterialMovement = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/material-movements`, data);
+
+export const updateMaterialMovement = (companyId, id, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/material-movements/${id}`, data);
+
+export const deleteMaterialMovement = (companyId, id) =>
+  axiosInstance.delete(`/api/inventory/${companyId}/material-movements/${id}`);
+
+// Job Work Reports
+export const getJobOrdersSummary = (companyId, type, status) =>
+  axiosInstance.get(`/api/inventory/${companyId}/jobwork/orders-summary`, { params: { type, status } });
+
+export const getComponentsOutstanding = (companyId, jobOrderId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/jobwork/components-outstanding`, { params: { jobOrderId } });
+
+export const getMaterialInRegister = (companyId, jobOrderId, fromDate, toDate) =>
+  axiosInstance.get(`/api/inventory/${companyId}/jobwork/material-in-register`, { params: { jobOrderId, fromDate, toDate } });
+
+export const getMaterialOutRegister = (companyId, jobOrderId, fromDate, toDate) =>
+  axiosInstance.get(`/api/inventory/${companyId}/jobwork/material-out-register`, { params: { jobOrderId, fromDate, toDate } });
+
+export const getMaterialMovementRegister = (companyId, jobOrderId, fromDate, toDate) =>
+  axiosInstance.get(`/api/inventory/${companyId}/jobwork/material-movement-register`, { params: { jobOrderId, fromDate, toDate } });
+
+export const getIssueVariance = (companyId, jobOrderId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/jobwork/issue-variance`, { params: { jobOrderId } });
+
+export const getReceiptVariance = (companyId, jobOrderId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/jobwork/receipt-variance`, { params: { jobOrderId } });
+
