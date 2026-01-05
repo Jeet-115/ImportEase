@@ -27,6 +27,20 @@ import costTracksRoutes from "./inventory/costTracks/routes.js";
 import jobOrdersRoutes from "./inventory/jobOrders/routes.js";
 import materialMovementsRoutes from "./inventory/materialMovements/routes.js";
 import jobworkReportsRoutes from "./inventory/jobwork/routes.js";
+import inventoryTransactionsRoutes from "./inventory/ledger/transactions/routes.js";
+import trackingRoutes from "./inventory/ledger/tracking/routes.js";
+import receiptNotesRoutes from "./inventory/ledger/vouchers/receiptNotes/routes.js";
+import deliveryNotesRoutes from "./inventory/ledger/vouchers/deliveryNotes/routes.js";
+import purchasesRoutes from "./inventory/ledger/vouchers/purchases/routes.js";
+import salesRoutes from "./inventory/ledger/vouchers/sales/routes.js";
+import rejectionsInRoutes from "./inventory/ledger/vouchers/rejectionsIn/routes.js";
+import rejectionsOutRoutes from "./inventory/ledger/vouchers/rejectionsOut/routes.js";
+import stockJournalRoutes from "./inventory/ledger/vouchers/stockJournal/routes.js";
+import manufacturingRoutes from "./inventory/ledger/vouchers/manufacturing/routes.js";
+import materialInRoutes from "./inventory/ledger/vouchers/materialIn/routes.js";
+import materialOutRoutes from "./inventory/ledger/vouchers/materialOut/routes.js";
+import physicalStockRoutes from "./inventory/ledger/vouchers/physicalStock/routes.js";
+import ledgerReportsRoutes from "./inventory/ledger/reports/routes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
@@ -98,6 +112,21 @@ app.use("/api/inventory/:companyId/cost-tracks", softwareAuthGuard, costTracksRo
 app.use("/api/inventory/:companyId/job-orders", softwareAuthGuard, jobOrdersRoutes);
 app.use("/api/inventory/:companyId/material-movements", softwareAuthGuard, materialMovementsRoutes);
 app.use("/api/inventory/:companyId/jobwork", softwareAuthGuard, jobworkReportsRoutes);
+// Inventory Ledger (Phase-3)
+app.use("/api/inventory/:companyId/ledger/transactions", softwareAuthGuard, inventoryTransactionsRoutes);
+app.use("/api/inventory/:companyId/ledger/tracking", softwareAuthGuard, trackingRoutes);
+app.use("/api/inventory/:companyId/receipt-notes", softwareAuthGuard, receiptNotesRoutes);
+app.use("/api/inventory/:companyId/delivery-notes", softwareAuthGuard, deliveryNotesRoutes);
+app.use("/api/inventory/:companyId/purchases", softwareAuthGuard, purchasesRoutes);
+app.use("/api/inventory/:companyId/sales-vouchers", softwareAuthGuard, salesRoutes);
+app.use("/api/inventory/:companyId/rejections-in", softwareAuthGuard, rejectionsInRoutes);
+app.use("/api/inventory/:companyId/rejections-out", softwareAuthGuard, rejectionsOutRoutes);
+app.use("/api/inventory/:companyId/stock-journal", softwareAuthGuard, stockJournalRoutes);
+app.use("/api/inventory/:companyId/manufacturing", softwareAuthGuard, manufacturingRoutes);
+app.use("/api/inventory/:companyId/material-in", softwareAuthGuard, materialInRoutes);
+app.use("/api/inventory/:companyId/material-out", softwareAuthGuard, materialOutRoutes);
+app.use("/api/inventory/:companyId/physical-stock", softwareAuthGuard, physicalStockRoutes);
+app.use("/api/inventory/:companyId/ledger/reports", softwareAuthGuard, ledgerReportsRoutes);
 
 // Root route
 app.get("/", (req, res) => {

@@ -249,3 +249,89 @@ export const getIssueVariance = (companyId, jobOrderId) =>
 export const getReceiptVariance = (companyId, jobOrderId) =>
   axiosInstance.get(`/api/inventory/${companyId}/jobwork/receipt-variance`, { params: { jobOrderId } });
 
+// ============================================
+// Phase-3: Inventory Ledger Engine
+// ============================================
+
+// Transactions (Read-only - stock computation)
+export const getInventoryTransactions = (companyId, filters) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/transactions`, { params: filters });
+
+export const getStock = (companyId, itemId, godownId, batchId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/transactions/stock`, { params: { itemId, godownId, batchId } });
+
+export const getAllStock = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/transactions/stock/all`);
+
+// Tracking Numbers
+export const getTrackingNumbers = (companyId, status) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/tracking`, { params: { status } });
+
+export const getTrackingNumber = (companyId, trackingNo) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/tracking/${trackingNo}`);
+
+export const createTrackingNumber = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/ledger/tracking`, data);
+
+export const updateTrackingNumber = (companyId, trackingNo, data) =>
+  axiosInstance.put(`/api/inventory/${companyId}/ledger/tracking/${trackingNo}`, data);
+
+export const closeTrackingNumber = (companyId, trackingNo) =>
+  axiosInstance.post(`/api/inventory/${companyId}/ledger/tracking/${trackingNo}/close`);
+
+// Vouchers
+export const createReceiptNote = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/receipt-notes`, data);
+
+export const createDeliveryNote = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/delivery-notes`, data);
+
+export const createPurchaseVoucher = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/purchases`, data);
+
+export const createSalesVoucher = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/sales-vouchers`, data);
+
+export const createRejectionIn = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/rejections-in`, data);
+
+export const createRejectionOut = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/rejections-out`, data);
+
+export const createStockJournal = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/stock-journal`, data);
+
+export const createManufacturing = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/manufacturing`, data);
+
+export const createMaterialIn = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/material-in`, data);
+
+export const createMaterialOut = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/material-out`, data);
+
+export const createPhysicalStock = (companyId, data) =>
+  axiosInstance.post(`/api/inventory/${companyId}/physical-stock`, data);
+
+// Reports (Computed from ledger)
+export const getStockSummary = (companyId, itemId, godownId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/stock-summary`, { params: { itemId, godownId } });
+
+export const getBatchSummary = (companyId, itemId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/batch-summary`, { params: { itemId } });
+
+export const getGodownSummary = (companyId, godownId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/godown-summary`, { params: { godownId } });
+
+export const getNegativeStock = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/negative-stock`);
+
+export const getSalesBillsPending = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/sales-bills-pending`);
+
+export const getPurchaseBillsPending = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/purchase-bills-pending`);
+
+export const getJobworkOutstanding = (companyId) =>
+  axiosInstance.get(`/api/inventory/${companyId}/ledger/reports/jobwork-outstanding`);
+

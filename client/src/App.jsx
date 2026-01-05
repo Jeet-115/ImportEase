@@ -24,6 +24,7 @@ import StockCategories from "./pages/StockCategories.jsx";
 import Godowns from "./pages/Godowns.jsx";
 import StockItems from "./pages/StockItems.jsx";
 import InventoryFeatures from "./pages/InventoryFeatures.jsx";
+import InventoryVoucher from "./pages/InventoryVoucher.jsx";
 import BackendStatusGate from "./components/BackendStatusGate.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -85,6 +86,8 @@ const AppShell = () => {
           <Route path="/inventory/:companyId/price-lists" element={<InventoryFeatures />} />
           <Route path="/inventory/:companyId/cost-tracking" element={<InventoryFeatures />} />
           <Route path="/inventory/:companyId/job-work" element={<InventoryFeatures />} />
+          <Route path="/inventory/:companyId/vouchers/:voucherType" element={<InventoryVoucher />} />
+          <Route path="/inventory/:companyId/reports/:reportType" element={<InventoryFeatures />} />
         </Routes>
       </HashRouter>
     </>

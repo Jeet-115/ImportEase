@@ -13,6 +13,15 @@ import {
   FiDollarSign,
   FiTrendingUp,
   FiBriefcase,
+  FiShoppingCart,
+  FiTruck,
+  FiFile,
+  FiBarChart2,
+  FiXCircle,
+  FiCheckCircle,
+  FiArrowRight,
+  FiArrowLeft,
+  FiDatabase,
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import BackButton from "../components/BackButton.jsx";
@@ -62,6 +71,17 @@ const InventoryHome = () => {
   };
 
   const handlePhase2Click = (path) => {
+    if (!selectedCompany) {
+      setStatus({
+        type: "error",
+        message: "Please select a company first.",
+      });
+      return;
+    }
+    navigate(`/inventory/${selectedCompany._id}/${path}`);
+  };
+
+  const handlePhase3Click = (path) => {
     if (!selectedCompany) {
       setStatus({
         type: "error",
@@ -314,6 +334,157 @@ const InventoryHome = () => {
                   </div>
                   <p className="text-sm text-slate-600">
                     Manage job work orders and material movements
+                  </p>
+                </motion.button>
+              </div>
+            </motion.section>
+
+            <motion.section
+              className="space-y-4"
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.3 }}
+            >
+              <h2 className="text-lg font-semibold text-slate-900">
+                Phase-3: Inventory Ledger & Vouchers
+              </h2>
+              <p className="text-sm text-slate-600 mb-4">
+                Create vouchers to move stock. All stock quantities are computed from transactions.
+              </p>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <motion.button
+                  onClick={() => handlePhase3Click("vouchers/receipt-notes")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiCheckCircle className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Receipt Notes
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Goods received notes (GRN)
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("vouchers/delivery-notes")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiArrowRight className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Delivery Notes
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Goods delivery notes
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("vouchers/purchases")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiShoppingCart className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Purchase Vouchers
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Purchase bills and invoices
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("vouchers/sales")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiTruck className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Sales Vouchers
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Sales bills and invoices
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("vouchers/stock-journal")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiFile className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Stock Journal
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Transfers, wastage, adjustments
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("vouchers/manufacturing")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiPackage className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Manufacturing
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Manufacturing journal with BOM
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("vouchers/physical-stock")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiDatabase className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Physical Stock
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    Physical stock count and adjustment
+                  </p>
+                </motion.button>
+
+                <motion.button
+                  onClick={() => handlePhase3Click("reports/stock-summary")}
+                  className="rounded-3xl border border-green-100 bg-white/95 p-6 shadow-lg backdrop-blur text-left transition hover:-translate-y-1 hover:shadow-xl"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-center gap-3 text-green-600 mb-3">
+                    <FiBarChart2 className="text-2xl" />
+                    <span className="text-lg font-semibold text-slate-900">
+                      Stock Reports
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-600">
+                    View stock summary, batch, godown reports
                   </p>
                 </motion.button>
               </div>
