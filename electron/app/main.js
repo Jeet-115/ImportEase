@@ -407,6 +407,7 @@ const createMainWindow = async () => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      disableBlinkFeatures: "Autofill",
     },
   });
   mainWindow.on("ready-to-show", () => mainWindow?.show());
@@ -837,7 +838,7 @@ const bootstrap = async () => {
   });
 };
 
-
+app.commandLine.appendSwitch("disable-features", "AutofillServerCommunication");
 app.whenReady().then(bootstrap);
 
 app.on("window-all-closed", () => {

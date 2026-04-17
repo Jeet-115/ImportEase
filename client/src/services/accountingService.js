@@ -97,4 +97,22 @@ export const getBudgetVariance = (companyId, period) =>
 export const createBudget = (companyId, data) =>
   axiosInstance.post(`/api/accounting/${companyId}/budgets`, data);
 
+// Purchase Bills
+export const getPurchaseBills = (companyId) =>
+  axiosInstance.get(`/api/accounting/${companyId}/purchase/bills`);
+
+// Purchase ITC
+export const getPurchaseITC = (companyId) =>
+  axiosInstance.get(`/api/accounting/${companyId}/purchase/itc`);
+
+// Purchase GST-2B Import
+export const importPurchaseGst2B = (companyId, formData) =>
+  axiosInstance.post(`/api/accounting/${companyId}/purchase/import-2b`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+// GSTR-1
+export const getGstr1 = (companyId) =>
+  axiosInstance.get(`/api/accounting/${companyId}/sales/gstr1`);
+
 

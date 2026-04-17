@@ -195,8 +195,17 @@ export const deleteItem = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Stock item not found" });
   }
 
-  // TODO: In future phases, check if item has transactions
-  // For now, allow deletion
+  // Check if item has transactions - CRITICAL: prevent deletion if item has been used
+  const { findAllTransactions } = await import("../ledger/transactions/model.js");
+  const transactions = await findAllTransactions(companyId);
+  const itemTransactions = transactions.filter((tx) => tx.itemId === id);
+
+  if (itemTransactions.length > 0) {
+    console.error(`[ItemController] Cannot delete item ${id}: has ${itemTransactions.length} transactions`);
+    return res.status(400).json({
+      message: `Cannot delete item that has ${itemTransactions.length} transaction(s). Item is in use.`,
+    });
+  }
 
   const deleted = await deleteById(companyId, id);
   if (!deleted) {

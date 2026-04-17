@@ -29,6 +29,16 @@ import StockSummaryValuation from "./pages/StockSummaryValuation.jsx";
 import ItemValuation from "./pages/ItemValuation.jsx";
 import ProfitReport from "./pages/ProfitReport.jsx";
 import PurchaseHome from "./pages/PurchaseHome.jsx";
+import PurchaseGst2B from "./pages/PurchaseGst2B.jsx";
+import PurchaseWizard from "./pages/PurchaseWizard.jsx";
+import PurchaseBills from "./pages/PurchaseBills.jsx";
+import PurchaseOutstanding from "./pages/PurchaseOutstanding.jsx";
+import PurchaseITC from "./pages/PurchaseITC.jsx";
+import SalesWizard from "./pages/SalesWizard.jsx";
+import SalesOrders from "./pages/SalesOrders.jsx";
+import SalesOutstanding from "./pages/SalesOutstanding.jsx";
+import SalesProfit from "./pages/SalesProfit.jsx";
+import SalesGstr1 from "./pages/SalesGstr1.jsx";
 import BackendStatusGate from "./components/BackendStatusGate.jsx";
 import LoginScreen from "./components/LoginScreen.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
@@ -77,8 +87,11 @@ const AppShell = () => {
           <Route path="/party-masters" element={<PartyMasterManager />} />
           <Route path="/comparisons" element={<Comparisons />} />
           <Route path="/sales" element={<SalesHome />} />
+          <Route path="/accounting/:companyId/sales" element={<SalesHome />} />
           <Route path="/sales/party-master/:companyId" element={<SalesPartyMaster />} />
           <Route path="/sales/ledger-master" element={<SalesLedgerMaster />} />
+          <Route path="/purchase" element={<PurchaseHome />} />
+          <Route path="/accounting/:companyId/purchase" element={<PurchaseHome />} />
           <Route path="/inventory" element={<InventoryHome />} />
           <Route path="/inventory/:companyId/units" element={<UnitsMaster />} />
           <Route path="/inventory/:companyId/groups" element={<StockGroups />} />
@@ -111,7 +124,17 @@ const AppShell = () => {
           />
           {/* Phase-5: Accounting & Sales/Purchase Engine */}
           <Route path="/accounting/:companyId/sales" element={<SalesHome />} />
+          <Route path="/accounting/:companyId/sales/wizard" element={<SalesWizard />} />
+          <Route path="/accounting/:companyId/sales/orders" element={<SalesOrders />} />
+          <Route path="/accounting/:companyId/sales/outstanding" element={<SalesOutstanding />} />
+          <Route path="/accounting/:companyId/sales/profit" element={<SalesProfit />} />
+          <Route path="/accounting/:companyId/sales/gstr1" element={<SalesGstr1 />} />
           <Route path="/accounting/:companyId/purchase" element={<PurchaseHome />} />
+          <Route path="/accounting/:companyId/purchase/gst2b" element={<PurchaseGst2B />} />
+          <Route path="/accounting/:companyId/purchase/wizard" element={<PurchaseWizard />} />
+          <Route path="/accounting/:companyId/purchase/bills" element={<PurchaseBills />} />
+          <Route path="/accounting/:companyId/purchase/outstanding" element={<PurchaseOutstanding />} />
+          <Route path="/accounting/:companyId/purchase/itc" element={<PurchaseITC />} />
         </Routes>
       </HashRouter>
     </>

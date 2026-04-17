@@ -53,10 +53,7 @@ const Home = () => {
         {/* Main Navigation: Purchase, Sales, and Inventory */}
         <div className="grid gap-4 sm:grid-cols-3 mb-8">
           <motion.button
-            onClick={() => {
-              // Scroll to purchase section or stay on page
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            }}
+            onClick={() => navigate("/purchase")}
             className="rounded-3xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white p-6 text-left shadow-lg transition hover:-translate-y-1 hover:shadow-xl"
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
