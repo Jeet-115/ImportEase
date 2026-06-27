@@ -1,121 +1,163 @@
 import { motion } from "framer-motion";
 import {
-  FiBook,
-  FiClipboard,
-  FiCornerDownRight,
-  FiLayers,
-  FiSettings,
+  FiBriefcase,
+  FiChevronRight,
+  FiMapPin,
+  FiPlus,
   FiUsers,
-  FiShuffle,
 } from "react-icons/fi";
-import logo from "/logo.png";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import LoadingScreen from "../components/ui/LoadingScreen.jsx";
+import { fetchCompanyMasters } from "../services/companymasterservices";
+import { companyHubPath } from "../utils/companyRoutes";
+
+const container = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
+};
+
+const item = {
+  hidden: { opacity: 0, y: 14 },
+  show: { opacity: 1, y: 0 },
+};
 
 const Home = () => {
   const navigate = useNavigate();
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetchCompanyMasters()
+      .then(({ data }) => setCompanies(data || []))
+      .catch(() => setError("Unable to load clients. Please try again."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <LoadingScreen message="Loading your clients…" />;
+  }
 
   return (
-    <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-6 text-slate-900 flex flex-col items-center justify-center"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-    >
+    <div className="space-y-8">
       <motion.section
-        className="w-full max-w-4xl rounded-3xl bg-white/90 shadow-lg border border-amber-100 p-8 space-y-6 text-center backdrop-blur"
-        initial={{ y: 20, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
+        className="ie-hero relative"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
       >
-        <div className="flex flex-col items-center gap-3">
-          <img
-            src={logo}
-            alt="ImportEase logo"
-            className="h-12 w-12 rounded-xl shadow-sm"
-          />
-          <p className="inline-flex items-center gap-2 rounded-full bg-amber-100/80 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-amber-700">
-            <FiCornerDownRight />
-            Guided workflow
+        <div className="ie-hero-grid" aria-hidden />
+        <div className="relative z-[1] space-y-3">
+          <p className="ie-eyebrow">Start here</p>
+          <h1 className="ie-page-title">Select a client to work on</h1>
+          <p className="ie-page-desc">
+            Pick a company from your masters below, or add a new client first.
+            Once selected, you will see every GSTR workflow for that client in
+            one place.
           </p>
         </div>
-        <h1 className="text-4xl font-bold text-slate-900">
-          ImportEase – GST imports made simple for CAs
-        </h1>
-        <p className="text-base text-slate-600 max-w-2xl mx-auto">
-          Think of this as your assistant for GSTR-2B & GSTR-2A: first pick a company,
-          then upload the Excel, review suggested ledgers and actions, and
-          finally download a clean purchase register for Tally. Every screen
-          explains the next step so non-technical users can follow along safely.
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 text-left">
-          {[
-            {
-              icon: <FiSettings />,
-              title: "Company Masters",
-              text: "Add / update client details (address, GSTIN, etc.). Do this once per client.",
-              action: () => navigate("/company-masters"),
-            },
-            {
-              icon: <FiLayers />,
-              title: "Select & Process (GSTR-2B)",
-              text: "For a selected client, upload GSTR-2B and prepare the purchase register step by step.",
-              action: () => navigate("/company-selector"),
-            },
-            {
-              icon: <FiClipboard />,
-              title: "Review History (GSTR-2B)",
-              text: "Open previous runs for a client, re-download Excel, or fix ledgers later.",
-              action: () => navigate("/b2b-history"),
-            },
-            {
-              icon: <FiLayers />,
-              title: "Select & Process (GSTR-2A)",
-              text: "For a selected client, upload GSTR-2A CSV and prepare the purchase register step by step.",
-              action: () => navigate("/company-selector-gstr2a"),
-            },
-            {
-              icon: <FiClipboard />,
-              title: "Review History (GSTR-2A)",
-              text: "Open previous GSTR-2A runs for a client, re-download Excel, or fix ledgers later.",
-              action: () => navigate("/gstr2a-history"),
-            },
-            {
-              icon: <FiBook />,
-              title: "Ledger Names",
-              text: "Define standard purchase ledgers you want to reuse while mapping invoices.",
-              action: () => navigate("/ledger-names"),
-            },
-            {
-              icon: <FiUsers />,
-              title: "Manage Party Masters",
-              text: "Maintain party-wise details to help with consistent ledger selection.",
-              action: () => navigate("/party-masters"),
-            },
-            {
-              icon: <FiShuffle />,
-              title: "Comparisons",
-              text: "Compare processed GSTR-2B with GSTR-2A or with a Purchase Register to identify missing or duplicate invoices.",
-              action: () => navigate("/comparisons"),
-            },
-          ].map(({ icon, title, text, action }) => (
-            <button
-              key={title}
-              onClick={action}
-              className="rounded-2xl border border-amber-100 bg-gradient-to-br from-white to-amber-50 p-4 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
-            >
-              <div className="flex items-center gap-3 text-amber-600 text-xl">
-                {icon}
-                <span className="text-base font-semibold text-slate-900">
-                  {title}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-slate-600">{text}</p>
-            </button>
-          ))}
-        </div>
       </motion.section>
-    </motion.main>
+
+      {error ? <div className="ie-alert-error">{error}</div> : null}
+
+      <section>
+        <h2 className="ie-section-title">Add client</h2>
+        <motion.button
+          type="button"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={() => navigate("/company-masters")}
+          className="ie-card ie-card-hover flex w-full items-center gap-4 border-dashed border-teal-200/80 bg-teal-50/30 p-5 text-left sm:max-w-md"
+        >
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-2xl text-white shadow-md">
+            <FiPlus />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-slate-900">Add new company master</p>
+            <p className="mt-1 text-sm text-slate-500">
+              GSTIN, address, and contact details for a new client
+            </p>
+          </div>
+          <FiChevronRight className="shrink-0 text-teal-600" />
+        </motion.button>
+      </section>
+
+      <section>
+        <h2 className="ie-section-title">
+          Your clients ({companies.length})
+        </h2>
+
+        {companies.length === 0 ? (
+          <div className="ie-card border-dashed p-8 text-center">
+            <FiBriefcase className="mx-auto text-3xl text-slate-300" />
+            <p className="mt-3 font-medium text-slate-700">No clients yet</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Add your first company master to start processing GSTR returns.
+            </p>
+          </div>
+        ) : (
+          <motion.div
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            variants={container}
+            initial="hidden"
+            animate="show"
+          >
+            {companies.map((company) => (
+              <motion.button
+                key={company._id}
+                type="button"
+                variants={item}
+                onClick={() =>
+                  navigate(companyHubPath(company._id), { state: { company } })
+                }
+                className="ie-card ie-card-hover group flex flex-col p-5 text-left"
+                whileTap={{ scale: 0.99 }}
+              >
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-50 to-indigo-50 text-lg text-teal-600 ring-1 ring-teal-100/80">
+                    <FiBriefcase />
+                  </span>
+                  <FiChevronRight className="mt-1 shrink-0 text-slate-300 transition group-hover:text-teal-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900 group-hover:text-teal-800">
+                  {company.companyName}
+                </h3>
+                {company.mailingName &&
+                company.mailingName !== company.companyName ? (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {company.mailingName}
+                  </p>
+                ) : null}
+                <div className="mt-3 space-y-1.5 text-sm text-slate-500">
+                  {company.gstin ? (
+                    <p className="ie-mono text-xs text-slate-600">
+                      GSTIN {company.gstin}
+                    </p>
+                  ) : null}
+                  {company.state ? (
+                    <p className="inline-flex items-center gap-1">
+                      <FiMapPin size={12} className="opacity-70" />
+                      {company.state}
+                      {company.country ? `, ${company.country}` : ""}
+                    </p>
+                  ) : null}
+                  {company.email ? (
+                    <p className="inline-flex items-center gap-1 truncate">
+                      <FiUsers size={12} className="opacity-70" />
+                      {company.email}
+                    </p>
+                  ) : null}
+                </div>
+                <span className="mt-4 text-xs font-semibold text-teal-600">
+                  Open workspace →
+                </span>
+              </motion.button>
+            ))}
+          </motion.div>
+        )}
+      </section>
+    </div>
   );
 };
 
 export default Home;
-

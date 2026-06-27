@@ -1,0 +1,16 @@
+export const SALES_OUTPUT_COLUMNS = [
+  "Invoice date",
+  "Voucher Type",
+  "Voucher No.",
+  "Invoice No.",
+  "Ledger",
+  "Customer Name",
+  "Customer GSTIN",
+  "Taxable Amount",
+  "CGST Tax",
+  "SGST Tax",
+  "IGST Tax",
+  "Round OFF DR",
+  "Round OFF CR",
+  "Grand Total",
+];

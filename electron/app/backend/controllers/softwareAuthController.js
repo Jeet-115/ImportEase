@@ -1,6 +1,9 @@
 import bcrypt from "bcryptjs";
-import crypto from "node:crypto";
-import { User } from "../models/User.js";
+import {
+  findUserByEmail,
+  saveUser,
+} from "../models/userStore.js";
+import { generateSoftwareToken } from "../models/localUserStore.js";
 import { determinePlanStatus } from "../utils/subscriptionStatus.js";
 
 const getMasterEmails = () =>
@@ -8,9 +11,6 @@ const getMasterEmails = () =>
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-
-const generateSoftwareToken = () =>
-  `SW-${crypto.randomBytes(24).toString("hex")}`;
 
 export const loginSoftware = async (req, res) => {
   try {
@@ -23,7 +23,7 @@ export const loginSoftware = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    const user = await findUserByEmail(email);
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -72,7 +72,7 @@ export const loginSoftware = async (req, res) => {
       user.softwareToken = generateSoftwareToken();
     }
 
-    await user.save();
+    await saveUser(user);
 
     const planStatus = determinePlanStatus({
       isMaster,

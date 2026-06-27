@@ -19,7 +19,6 @@ const LoginScreen = () => {
     try {
       await login(email.trim(), password);
     } catch (err) {
-      // Use the error message from the exception
       const errorMessage = err.message || "Email and password don't match";
       setError(errorMessage);
     } finally {
@@ -29,70 +28,79 @@ const LoginScreen = () => {
 
   return (
     <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white flex items-center justify-center p-6"
+      className="login-screen"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       <motion.div
-        className="w-full max-w-md rounded-3xl bg-white/90 shadow-lg border border-amber-100 p-8 backdrop-blur"
-        initial={{ y: 20, opacity: 0 }}
+        className="login-card"
+        initial={{ y: 24, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.1 }}
+        transition={{ delay: 0.08, duration: 0.4, ease: [0.17, 0.67, 0.83, 0.67] }}
       >
-        <div className="flex flex-col items-center gap-3 mb-6">
-          <img
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <motion.img
             src={logo}
-            alt="ImportEase logo"
-            className="h-12 w-12 rounded-xl shadow-sm"
+            alt="ImportEase"
+            className="h-14 w-14 rounded-2xl shadow-md ring-1 ring-slate-200"
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 200 }}
           />
-          <h1 className="text-3xl font-bold text-slate-900">ImportEase Login</h1>
-          <p className="text-sm text-slate-600 text-center">
-            Sign in with the email and password used on the ImportEase website.
-          </p>
+          <div>
+            <p className="ie-eyebrow text-center">CA workspace</p>
+            <h1 className="login-title">Welcome back</h1>
+            <p className="login-subtitle">
+              Sign in to process GSTR-2B &amp; GSTR-2A, map purchase ledgers, and
+              export Tally-ready registers — locally on your machine.
+            </p>
+          </div>
         </div>
 
         {locked && (
-          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            <p className="font-semibold">{lockReason || "Access is currently blocked."}</p>
+          <div className="login-alert login-alert-error">
+            <p className="font-semibold">
+              {lockReason || "Access is currently blocked."}
+            </p>
           </div>
         )}
 
         {error && !locked && (
-          <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <div className="login-alert login-alert-error">
             <p className="font-semibold">{error}</p>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <label className="flex flex-col gap-2">
-            <span className="text-sm font-semibold text-slate-700">Email</span>
+        <form onSubmit={handleSubmit} className="login-form">
+          <label className="login-label">
+            Email
             <input
               type="email"
-              className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+              className="login-input"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              placeholder="Enter your email"
+              placeholder="you@firm.com"
             />
           </label>
 
-          <label className="flex flex-col gap-2">
-            <span className="text-sm font-semibold text-slate-700">Password</span>
+          <label className="login-label">
+            Password
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
-                className="w-full rounded-xl border border-amber-200 bg-white px-4 py-3 pr-12 text-sm text-slate-900 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="login-input pr-11"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
-                placeholder="Enter your password"
+                placeholder="••••••••"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
@@ -102,17 +110,22 @@ const LoginScreen = () => {
 
           <button
             type="submit"
-            className="w-full rounded-xl bg-amber-500 px-4 py-3 text-white text-sm font-semibold shadow hover:bg-amber-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            className="login-button"
             disabled={submitting}
           >
-            {submitting ? "Logging in..." : "Login"}
+            {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
+
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <span className="ie-stat-chip text-[10px]">GST compliant flow</span>
+          <span className="ie-stat-chip ie-stat-chip--tech text-[10px]">
+            Local &amp; secure
+          </span>
+        </div>
       </motion.div>
     </motion.main>
   );
 };
 
 export default LoginScreen;
-
-

@@ -90,7 +90,7 @@ const LedgerNameDropdown = ({
           onFocus={handleInputFocus}
           onKeyDown={handleInputKeyDown}
           placeholder={placeholder}
-          className="w-56 rounded-xl border border-amber-200 bg-white px-3 py-1 pr-8 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
+          className="w-56 rounded-xl border border-slate-200 bg-white px-3 py-1 pr-8 text-xs focus:outline-none focus:ring-2 focus:ring-amber-200"
         />
         <button
           type="button"
@@ -106,7 +106,7 @@ const LedgerNameDropdown = ({
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-56 rounded-xl border border-amber-200 bg-white shadow-lg">
+        <div className="absolute z-50 mt-1 w-56 rounded-xl border border-slate-200 bg-white shadow-lg">
           <div
             ref={listRef}
             className="max-h-60 overflow-y-auto overscroll-contain"
@@ -120,7 +120,7 @@ const LedgerNameDropdown = ({
                     <li
                       key={optionId}
                       onClick={() => handleSelectOption(optionValue)}
-                      className="cursor-pointer px-3 py-2 text-xs text-slate-700 hover:bg-amber-50 active:bg-amber-100"
+                      className="cursor-pointer px-3 py-2 text-xs text-slate-700 hover:bg-teal-50 active:bg-amber-100"
                     >
                       {optionValue}
                     </li>
@@ -133,14 +133,14 @@ const LedgerNameDropdown = ({
               </div>
             )}
             {onAddNew && inputValue.trim() && (
-              <div className="border-t border-amber-100">
+              <div className="border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => {
                     onAddNew(inputValue.trim());
                     setIsOpen(false);
                   }}
-                  className="w-full px-3 py-2 text-left text-xs font-semibold text-amber-600 hover:bg-amber-50 active:bg-amber-100"
+                  className="w-full px-3 py-2 text-left text-xs font-semibold text-teal-600 hover:bg-teal-50 active:bg-amber-100"
                 >
                   + Add "{inputValue.trim()}"
                 </button>

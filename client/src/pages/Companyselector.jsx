@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { FiBriefcase, FiUsers } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import BackButton from "../components/BackButton";
+import LoadingScreen from "../components/ui/LoadingScreen.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 import { fetchCompanyMasters } from "../services/companymasterservices";
 
 const Companyselector = () => {
@@ -32,46 +34,27 @@ const Companyselector = () => {
   };
 
   if (loading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-amber-800">
-        Loading companies...
-      </main>
-    );
+    return <LoadingScreen message="Loading companies…" />;
   }
 
   if (error) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-rose-600">
-        {error}
-      </main>
+      <div className="ie-alert-error">{error}</div>
     );
   }
 
   return (
-    <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+    <motion.div
+      className="space-y-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
-      <section className="mx-auto max-w-6xl space-y-5">
         <BackButton label="Back to dashboard" />
-        <motion.header
-          className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-        >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
-            Step 1
-          </p>
-          <h1 className="text-3xl font-bold text-slate-900">
-            Step 1: Choose the client you want to work on
-          </h1>
-          <p className="text-base text-slate-600">
-            ImportEase will use this client&apos;s name, GSTIN and state for the
-            purchase register. Pick the client first, then on the next screen
-            you&apos;ll upload that client&apos;s GSTR-2B Excel file.
-          </p>
-        </motion.header>
+        <PageHeader
+          eyebrow="GSTR-2B · Step 1"
+          title="Choose the client"
+          description="ImportEase uses this client's name, GSTIN, and state for the purchase register. Pick the client first, then upload their GSTR-2B Excel on the next screen."
+        />
 
         <motion.div
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
@@ -90,12 +73,12 @@ const Companyselector = () => {
             <motion.button
               key={company._id}
               onClick={() => handleSelect(company)}
-              className="rounded-2xl border border-amber-100 bg-white/90 p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+              className="ie-card ie-card-hover p-5 text-left"
               variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
             >
-              <div className="flex items-center gap-3 text-amber-600">
+              <div className="flex items-center gap-3 text-teal-600">
                 <FiBriefcase />
-                <span className="text-sm font-semibold uppercase tracking-wide text-amber-500">
+                <span className="ie-eyebrow text-[10px]">
                   Company Name
                 </span>
               </div>
@@ -108,7 +91,7 @@ const Companyselector = () => {
                   {company.state}, {company.country} - {company.pincode}
                 </p>
                 <p>GSTIN: {company.gstin || "—"}</p>
-                <p className="inline-flex items-center gap-1 text-amber-600">
+                <p className="inline-flex items-center gap-1 text-teal-600">
                   <FiUsers /> Contact: {company.email || "—"}
                 </p>
               </div>
@@ -121,8 +104,7 @@ const Companyselector = () => {
             No companies found. Create one first.
           </p>
         ) : null}
-      </section>
-    </motion.main>
+    </motion.div>
   );
 };
 

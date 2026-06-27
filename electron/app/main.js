@@ -236,9 +236,28 @@ const getDevServerPort = () => {
   }
 };
 
-const startFrontendDevServer = () => {
+const isDevServerAlreadyRunning = async () => {
+  try {
+    const response = await fetch(DEV_SERVER_URL, {
+      method: "HEAD",
+      cache: "no-store",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+const startFrontendDevServer = async () => {
   if (!isDevLike || frontendProcess) {
     return frontendProcess;
+  }
+
+  if (await isDevServerAlreadyRunning()) {
+    console.log(
+      `[frontend] Dev server already running at ${DEV_SERVER_URL}; skipping spawn.`,
+    );
+    return null;
   }
 
   const clientDir = path.resolve(__dirname, "..", "..", "client");
@@ -314,7 +333,7 @@ const stopFrontendDevServer = () => {
 
 const waitForDevServer = async (attempts = 40, delayMs = 250) => {
   if (isDevLike) {
-    startFrontendDevServer();
+    await startFrontendDevServer();
   }
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
@@ -470,7 +489,9 @@ const startBackend = async () => {
     backendProcess = spawn(process.execPath, [backendEntry], {
       env: {
         ...process.env,
-        PORT: BACKEND_PORT
+        NODE_ENV: "development",
+        PORT: BACKEND_PORT,
+        TALLY_HELPER_DATA_DIR: DATA_DIR,
       },
       stdio: "pipe",
     });

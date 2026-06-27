@@ -13,6 +13,8 @@ import {
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import BackButton from "../components/BackButton.jsx";
+import LoadingScreen from "../components/ui/LoadingScreen.jsx";
+import { useCompanyFromRoute } from "../hooks/useCompanyFromRoute.js";
 import { fetchCompanyMasters } from "../services/companymasterservices.js";
 import {
   createPartyMaster,
@@ -29,11 +31,18 @@ import { getPlanRestrictionMessage } from "../utils/planAccess.js";
 const PartyMasterManager = () => {
   const { user, isPlanRestricted } = useAuth();
   const navigate = useNavigate();
-  const [step, setStep] = useState("select"); // 'select', 'manage'
+  const {
+    company: routeCompany,
+    loading: routeCompanyLoading,
+    error: routeCompanyError,
+    hubPath,
+    companyId: routeCompanyId,
+  } = useCompanyFromRoute();
+  const [step, setStep] = useState(routeCompanyId ? "manage" : "select");
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [parties, setParties] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!routeCompanyId);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState({ type: "", message: "" });
   const [uploading, setUploading] = useState(false);
@@ -54,6 +63,14 @@ const PartyMasterManager = () => {
     : "";
 
   useEffect(() => {
+    if (routeCompany) {
+      setSelectedCompany(routeCompany);
+      setStep("manage");
+    }
+  }, [routeCompany]);
+
+  useEffect(() => {
+    if (routeCompanyId) return;
     const loadCompanies = async () => {
       setLoading(true);
       try {
@@ -70,7 +87,7 @@ const PartyMasterManager = () => {
       }
     };
     loadCompanies();
-  }, []);
+  }, [routeCompanyId]);
 
   useEffect(() => {
     if (selectedCompany && step === "manage") {
@@ -107,6 +124,10 @@ const PartyMasterManager = () => {
   };
 
   const handleBackToSelect = () => {
+    if (routeCompanyId) {
+      navigate(hubPath);
+      return;
+    }
     setSelectedCompany(null);
     setStep("select");
     setParties([]);
@@ -300,10 +321,25 @@ const PartyMasterManager = () => {
       party.gstin.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  if (routeCompanyLoading) {
+    return <LoadingScreen message="Loading client…" />;
+  }
+
+  if (routeCompanyError && routeCompanyId) {
+    return (
+      <main className="flex min-h-[40vh] flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-lg text-rose-600">{routeCompanyError}</p>
+        <button type="button" onClick={() => navigate("/")} className="ie-btn-primary">
+          Back to clients
+        </button>
+      </main>
+    );
+  }
+
   if (step === "select") {
     return (
       <motion.main
-        className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+        className="space-y-6"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
       >
@@ -311,11 +347,11 @@ const PartyMasterManager = () => {
           <BackButton label="Back to home" fallback="/" />
 
           <motion.header
-            className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+            className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+            <p className="ie-eyebrow">
               Party Masters
             </p>
             <h1 className="text-3xl font-bold text-slate-900">
@@ -363,13 +399,13 @@ const PartyMasterManager = () => {
                 <motion.button
                   key={company._id}
                   onClick={() => handleSelectCompany(company)}
-                  className="rounded-2xl border border-amber-100 bg-white/90 p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                  className="rounded-2xl ie-card p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
                   variants={{
                     hidden: { opacity: 0, y: 20 },
                     visible: { opacity: 1, y: 0 },
                   }}
                 >
-                  <div className="flex items-center gap-3 text-amber-600">
+                  <div className="flex items-center gap-3 text-teal-600">
                     <FiFileText />
                     <span className="text-sm font-semibold uppercase tracking-wide text-amber-500">
                       {company.companyName}
@@ -395,22 +431,22 @@ const PartyMasterManager = () => {
 
   return (
     <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+      className="space-y-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       <section className="mx-auto max-w-5xl space-y-5">
         <BackButton
-          label="Back to company selection"
+          label={routeCompanyId ? "Back to client" : "Back to company selection"}
           onClick={handleBackToSelect}
         />
 
         <motion.header
-          className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+          className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+          <p className="ie-eyebrow">
             Party Masters
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
@@ -437,7 +473,7 @@ const PartyMasterManager = () => {
         ) : null}
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
+          className="rounded-3xl ie-card p-6 shadow-lg backdrop-blur space-y-4"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
@@ -458,7 +494,7 @@ const PartyMasterManager = () => {
                 type="file"
                 accept=".xls,.xlsx"
                 onChange={handleFileChange}
-                className="w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
                 disabled={uploading || readOnly}
               />
               {uploadFile && (
@@ -471,7 +507,7 @@ const PartyMasterManager = () => {
               type="button"
               onClick={handleUpload}
               disabled={!uploadFile || uploading || readOnly}
-              className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-2xl bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700 disabled:opacity-60"
             >
               <FiUpload />
               {uploading ? "Uploading..." : "Upload"}
@@ -480,7 +516,7 @@ const PartyMasterManager = () => {
         </motion.section>
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
+          className="rounded-3xl ie-card p-6 shadow-lg backdrop-blur space-y-4"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
@@ -505,7 +541,7 @@ const PartyMasterManager = () => {
                         })
                       : setNewParty({ ...newParty, partyName: e.target.value })
                   }
-                  className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
                   placeholder="Enter party name"
                 disabled={submitting || readOnly}
                 />
@@ -523,7 +559,7 @@ const PartyMasterManager = () => {
                         })
                       : setNewParty({ ...newParty, gstin: e.target.value })
                   }
-                  className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
                   placeholder="Enter GSTIN/UIN"
                 disabled={submitting || readOnly}
                 />
@@ -533,7 +569,7 @@ const PartyMasterManager = () => {
               <button
                 type="submit"
               disabled={submitting || readOnly}
-                className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-2xl bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700 disabled:opacity-60"
               >
                 {editingId ? <FiSave /> : <FiPlus />}
                 {editingId ? "Save changes" : "Add party"}
@@ -553,11 +589,11 @@ const PartyMasterManager = () => {
         </motion.section>
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-0 shadow-lg backdrop-blur"
+          className="rounded-3xl ie-card p-0 shadow-lg backdrop-blur"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <header className="flex flex-col gap-3 border-b border-amber-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <header className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex-1">
               <div className="relative">
                 <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -566,7 +602,7 @@ const PartyMasterManager = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search by party name or GSTIN..."
-                  className="w-full rounded-xl border border-amber-200 bg-white pl-10 pr-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm shadow-sm focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
                 />
               </div>
             </div>
@@ -581,7 +617,7 @@ const PartyMasterManager = () => {
               <button
                 type="button"
                 onClick={loadParties}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-600 hover:bg-amber-50"
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-600 hover:bg-teal-50"
               >
                 <FiRefreshCw />
                 Refresh

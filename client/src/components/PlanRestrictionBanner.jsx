@@ -1,3 +1,4 @@
+import { FiLock } from "react-icons/fi";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getPlanRestrictionMessage } from "../utils/planAccess.js";
 
@@ -10,16 +11,17 @@ const PlanRestrictionBanner = ({ className = "" }) => {
 
   return (
     <div
-      className={`rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow ${className}`}
+      className={`ie-card flex gap-3 border-slate-200/80 bg-amber-50/90 p-4 text-sm text-amber-900 ${className}`}
     >
-      <p className="font-semibold">Read-only access</p>
-      <p className="mt-1 text-xs">
-        {getPlanRestrictionMessage(user.planStatus)}
-      </p>
+      <FiLock className="mt-0.5 shrink-0 text-teal-600" size={18} />
+      <div>
+        <p className="font-semibold">Read-only access</p>
+        <p className="mt-1 text-xs text-amber-800/90">
+          {getPlanRestrictionMessage(user.planStatus)}
+        </p>
+      </div>
     </div>
   );
 };
 
 export default PlanRestrictionBanner;
-
-

@@ -1,8 +1,10 @@
 import { motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { FiRefreshCcw, FiSave, FiTrash2 } from "react-icons/fi";
 import BackButton from "../components/BackButton";
 import ConfirmDialog from "../components/ConfirmDialog";
+import PageHeader from "../components/ui/PageHeader.jsx";
 import {
   fetchCompanyMasters,
   createCompanyMaster,
@@ -29,6 +31,7 @@ const initialFormState = {
 
 const Companymasters = () => {
   const { user, isPlanRestricted } = useAuth();
+  const location = useLocation();
   const [formData, setFormData] = useState(initialFormState);
   const [companies, setCompanies] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -68,6 +71,27 @@ const Companymasters = () => {
   useEffect(() => {
     loadCompanies();
   }, []);
+
+  useEffect(() => {
+    const editCompanyId = location.state?.editCompanyId;
+    if (!editCompanyId || companies.length === 0) return;
+    const company = companies.find((item) => item._id === editCompanyId);
+    if (!company) return;
+    setSelectedId(company._id);
+    setFormData({
+      companyName: company.companyName || "",
+      mailingName: company.mailingName || "",
+      address: company.address || "",
+      state: company.state || "",
+      country: company.country || "",
+      pincode: company.pincode || "",
+      telephone: company.telephone || "",
+      mobile: company.mobile || "",
+      email: company.email || "",
+      tanNumber: company.tanNumber || "",
+      gstin: company.gstin || "",
+    });
+  }, [location.state?.editCompanyId, companies]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -167,46 +191,32 @@ const Companymasters = () => {
   ];
 
   return (
-    <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+    <motion.div
+      className="space-y-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
-      <section className="mx-auto max-w-6xl space-y-6">
-        <BackButton label="Back to dashboard" />
-        <motion.header
-          className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-        >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
-            Master data
-          </p>
-          <h1 className="text-3xl font-bold text-slate-900">
-            Company masters made friendly
-          </h1>
-          <p className="text-base text-slate-600">
-            Fill only what you know; you can always come back and update the
-            rest. These details automatically flow into every processed Excel.
-          </p>
-        </motion.header>
+        <BackButton label="Back to clients" fallback="/" />
+        <PageHeader
+          eyebrow="Master data"
+          title="Company masters"
+          description="Fill only what you know; you can always come back and update the rest. These details flow into every processed Excel."
+        />
 
         <PlanRestrictionBanner />
 
         {status.message ? (
           <div
-            className={`rounded-md px-4 py-2 text-sm ${
-              status.type === "success"
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-rose-50 text-rose-700 border border-rose-200"
-            }`}
+            className={
+              status.type === "success" ? "ie-alert-success" : "ie-alert-error"
+            }
           >
             {status.message}
           </div>
         ) : null}
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur"
+          className="ie-card p-6"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
@@ -237,7 +247,7 @@ const Companymasters = () => {
                   required={required}
                   value={formData[name]}
                   onChange={handleChange}
-                  className="rounded-md border border-amber-100 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="ie-input"
                   disabled={readOnly}
                 />
               </label>
@@ -246,7 +256,7 @@ const Companymasters = () => {
               <button
                 type="submit"
                 disabled={saving || readOnly}
-                className="w-full rounded-md bg-amber-500 px-4 py-2 text-white font-medium shadow hover:bg-amber-600 transition-colors disabled:opacity-70 inline-flex items-center justify-center gap-2"
+                className="ie-btn-primary w-full disabled:opacity-70 inline-flex items-center justify-center gap-2"
               >
                 <FiSave />
                 {saving ? "Saving..." : selectedId ? "Update Company" : "Create Company"}
@@ -256,7 +266,7 @@ const Companymasters = () => {
         </motion.section>
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur"
+          className="ie-card p-6"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
@@ -267,14 +277,14 @@ const Companymasters = () => {
             <button
               onClick={loadCompanies}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+              className="ie-btn-ghost disabled:opacity-50"
             >
               <FiRefreshCcw />
               {loading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+          <div className="ie-table-wrap">
+            <table className="ie-table">
               <thead>
                 <tr className="text-slate-500">
                   <th className="px-3 py-2">Company Name</th>
@@ -320,7 +330,7 @@ const Companymasters = () => {
                       <td className="px-3 py-3">
                         <div className="flex gap-3 text-sm">
                           <button
-                            className="text-amber-600 hover:text-amber-800 font-semibold"
+                            className="text-teal-600 hover:text-teal-800 font-semibold"
                             onClick={() => handleEdit(company)}
                             disabled={readOnly}
                           >
@@ -354,8 +364,6 @@ const Companymasters = () => {
             </table>
           </div>
         </motion.section>
-      </section>
-
       <ConfirmDialog
         open={Boolean(confirmDeleteId)}
         title="Delete Company Master"
@@ -364,7 +372,7 @@ const Companymasters = () => {
         onConfirm={handleDelete}
         onCancel={() => setConfirmDeleteId(null)}
       />
-    </motion.main>
+    </motion.div>
   );
 };
 

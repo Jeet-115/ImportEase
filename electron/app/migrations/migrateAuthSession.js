@@ -14,8 +14,12 @@ const CURRENT_VERSION = 2;
 
 export const migrateAuthSession = async (readJson, writeJson) => {
   try {
-    // Read existing data with defaultToObject: true
     const data = await readJson(TARGET_FILE, { defaultToObject: true });
+
+    // Nothing to migrate when session file does not exist yet
+    if (!data || Object.keys(data).length === 0) {
+      return { migrated: false, version: 0 };
+    }
 
     // Detect schema version (missing _schemaVersion → assume v1)
     const currentVersion = data._schemaVersion ?? 1;

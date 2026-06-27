@@ -7,16 +7,17 @@ const backdropVariants = {
 };
 
 const dialogVariants = {
-  hidden: { opacity: 0, scale: 0.8 },
+  hidden: { opacity: 0, scale: 0.92, y: 8 },
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { type: "spring", stiffness: 260, damping: 20 },
+    y: 0,
+    transition: { type: "spring", stiffness: 320, damping: 26 },
   },
   exit: {
     opacity: 0,
-    scale: 0.8,
-    transition: { duration: 0.2 },
+    scale: 0.96,
+    transition: { duration: 0.15 },
   },
 };
 
@@ -32,7 +33,7 @@ const ConfirmDialog = ({
   <AnimatePresence>
     {open ? (
       <motion.div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
         variants={backdropVariants}
         initial="hidden"
         animate="visible"
@@ -40,7 +41,7 @@ const ConfirmDialog = ({
         onClick={onCancel}
       >
         <motion.div
-          className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+          className="ie-card w-full max-w-md p-6"
           variants={dialogVariants}
           initial="hidden"
           animate="visible"
@@ -48,17 +49,15 @@ const ConfirmDialog = ({
           onClick={(e) => e.stopPropagation()}
         >
           <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-          <p className="mt-2 text-sm text-slate-600">{message}</p>
+          <p className="mt-2 text-sm text-slate-600 leading-relaxed">{message}</p>
           <div className="mt-6 flex justify-end gap-3">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-            >
+            <button type="button" onClick={onCancel} className="ie-btn-ghost">
               {cancelText}
             </button>
             <button
+              type="button"
               onClick={onConfirm}
-              className="px-4 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 transition-colors"
+              className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-rose-700 transition-colors"
             >
               {confirmText}
             </button>
@@ -70,4 +69,3 @@ const ConfirmDialog = ({
 );
 
 export default ConfirmDialog;
-

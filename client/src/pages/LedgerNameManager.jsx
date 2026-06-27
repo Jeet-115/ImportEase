@@ -178,7 +178,7 @@ const LedgerNameManager = () => {
 
   return (
     <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+      className="space-y-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
@@ -186,11 +186,11 @@ const LedgerNameManager = () => {
         <BackButton label="Back to home" fallback="/" />
 
         <motion.header
-          className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+          className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+          <p className="ie-eyebrow">
             Ledger names
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
@@ -217,7 +217,7 @@ const LedgerNameManager = () => {
         ) : null}
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
+          className="rounded-3xl ie-card p-6 shadow-lg backdrop-blur space-y-4"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
@@ -237,7 +237,7 @@ const LedgerNameManager = () => {
                     ? setEditingValue(event.target.value)
                     : setNewName(event.target.value)
                 }
-                className="mt-2 w-full rounded-2xl border border-amber-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
                 placeholder="Enter ledger name"
                 disabled={submitting || readOnly}
               />
@@ -246,7 +246,7 @@ const LedgerNameManager = () => {
               <button
                 type="submit"
                 disabled={submitting || readOnly}
-                className="inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-2xl bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700 disabled:opacity-60"
               >
                 {editingId ? <FiSave /> : <FiPlus />}
                 {editingId ? "Save changes" : "Add ledger"}
@@ -266,11 +266,11 @@ const LedgerNameManager = () => {
         </motion.section>
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-0 shadow-lg backdrop-blur"
+          className="rounded-3xl ie-card p-0 shadow-lg backdrop-blur"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <header className="flex flex-col gap-3 border-b border-amber-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <header className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex-1">
               <div className="relative">
                 <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -279,7 +279,7 @@ const LedgerNameManager = () => {
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search ledger names..."
-                  className="w-full rounded-xl border border-amber-200 bg-white pl-10 pr-4 py-2 text-sm shadow-sm focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2 text-sm shadow-sm focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
                 />
               </div>
             </div>
@@ -294,7 +294,7 @@ const LedgerNameManager = () => {
               <button
                 type="button"
                 onClick={loadLedgerNames}
-                className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-600 hover:bg-amber-50"
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-600 hover:bg-teal-50"
               >
                 <FiRefreshCw />
                 Refresh

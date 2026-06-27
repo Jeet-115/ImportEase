@@ -1,4 +1,4 @@
-import { User } from "../models/User.js";
+import { findUserBySoftwareToken } from "../models/userStore.js";
 import {
   determinePlanStatus,
   getPlanRestrictionMessage,
@@ -23,7 +23,7 @@ export const softwareAuthGuard = async (req, res, next) => {
       });
     }
 
-    const user = await User.findOne({ softwareToken: token });
+    const user = await findUserBySoftwareToken(token);
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -58,7 +58,7 @@ export const softwareAuthGuard = async (req, res, next) => {
     }
 
     req.softwareUser = {
-      id: user._id.toString(),
+      id: String(user._id),
       email: user.email,
       isMaster,
       planStatus,

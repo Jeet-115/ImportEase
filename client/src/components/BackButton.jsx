@@ -14,8 +14,9 @@ const BackButton = ({ label = "Back", fallback = "/" }) => {
 
   return (
     <button
+      type="button"
       onClick={handleBack}
-      className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-white/80 px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm transition hover:border-amber-300 hover:bg-amber-50"
+      className="ie-btn-ghost mb-4"
     >
       <FiArrowLeft />
       <span>{label}</span>
@@ -24,4 +25,3 @@ const BackButton = ({ label = "Back", fallback = "/" }) => {
 };
 
 export default BackButton;
-

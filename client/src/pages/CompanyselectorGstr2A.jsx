@@ -33,7 +33,7 @@ const CompanyselectorGstr2A = () => {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-amber-800">
+      <main className="flex min-h-[40vh] items-center justify-center text-teal-700">
         Loading companies...
       </main>
     );
@@ -41,7 +41,7 @@ const CompanyselectorGstr2A = () => {
 
   if (error) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-rose-600">
+      <main className="flex min-h-[40vh] items-center justify-center text-rose-600">
         {error}
       </main>
     );
@@ -49,18 +49,18 @@ const CompanyselectorGstr2A = () => {
 
   return (
     <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+      className="space-y-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       <section className="mx-auto max-w-6xl space-y-5">
         <BackButton label="Back to dashboard" />
         <motion.header
-          className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+          className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+          <p className="ie-eyebrow">
             Step 1
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
@@ -90,10 +90,10 @@ const CompanyselectorGstr2A = () => {
             <motion.button
               key={company._id}
               onClick={() => handleSelect(company)}
-              className="rounded-2xl border border-amber-100 bg-white/90 p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+              className="rounded-2xl ie-card p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
               variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
             >
-              <div className="flex items-center gap-3 text-amber-600">
+              <div className="flex items-center gap-3 text-teal-600">
                 <FiBriefcase />
                 <span className="text-sm font-semibold uppercase tracking-wide text-amber-500">
                   Company Name

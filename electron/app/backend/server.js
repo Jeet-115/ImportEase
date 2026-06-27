@@ -7,6 +7,7 @@ import companyMasterRoutes from "./routes/companymasterroutes.js";
 import gstinNumberRoutes from "./routes/gstinnumberroutes.js";
 import gstr2BImportRoutes from "./routes/gstr2bimportroutes.js";
 import gstr2AImportRoutes from "./routes/gstr2aimportroutes.js";
+import salesDataImportRoutes from "./routes/salesDataImportRoutes.js";
 import ledgerNameRoutes from "./routes/ledgernameroutes.js";
 import partyMasterRoutes from "./routes/partymasterroutes.js";
 import softwareAuthRoutes from "./routes/softwareAuthRoutes.js";
@@ -15,13 +16,21 @@ import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
 import { connectDB } from "./config/db.js";
+import { initUserStore } from "./models/userStore.js";
 import { softwareAuthGuard } from "./middleware/softwareAuthMiddleware.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const isProduction =
+  process.env.NODE_ENV === "production" || process.env.ELECTRON_IS_PACKAGED === "1";
+
 dotenv.config({
-  path: path.join(__dirname, ".env.production"),
+  path: path.join(__dirname, isProduction ? ".env.production" : ".env.development"),
+});
+dotenv.config({
+  path: path.join(__dirname, ".env"),
+  override: true,
 });
 const app = express();
 
@@ -63,6 +72,7 @@ app.use("/api/company-master", softwareAuthGuard, companyMasterRoutes);
 app.use("/api/gstin-numbers", softwareAuthGuard, gstinNumberRoutes);
 app.use("/api/gstr2b-imports", softwareAuthGuard, gstr2BImportRoutes);
 app.use("/api/gstr2a-imports", softwareAuthGuard, gstr2AImportRoutes);
+app.use("/api/sales-data-imports", softwareAuthGuard, salesDataImportRoutes);
 app.use("/api/ledger-names", softwareAuthGuard, ledgerNameRoutes);
 app.use("/api/party-masters", softwareAuthGuard, partyMasterRoutes);
 app.use("/api/carry-forward", softwareAuthGuard, carryForwardRoutes);
@@ -74,6 +84,7 @@ app.get("/", (req, res) => {
 
 const bootstrap = async () => {
   await connectDB();
+  await initUserStore();
   await initFileStore();
   await ensureGSTINSeeded();
   await ensureLedgerNamesSeeded();

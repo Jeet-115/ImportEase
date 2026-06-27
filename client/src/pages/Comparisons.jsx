@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { FiBriefcase, FiFileText, FiDownload, FiArrowRight, FiX } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import BackButton from "../components/BackButton";
+import LoadingScreen from "../components/ui/LoadingScreen.jsx";
+import { useCompanyFromRoute } from "../hooks/useCompanyFromRoute";
 import { fetchCompanyMasters } from "../services/companymasterservices";
 import { fetchImportsByCompany as fetchGstr2BImports } from "../services/gstr2bservice";
 import { fetchImportsByCompany as fetchGstr2AImports } from "../services/gstr2aservice";
@@ -10,10 +12,19 @@ import { compareGstr2BWithGstr2A, compareGstr2BWithPurchaseReg } from "../servic
 
 const Comparisons = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState("selectCompany"); // selectCompany, selectType, flowA, flowB
+  const {
+    company: routeCompany,
+    loading: routeCompanyLoading,
+    error: routeCompanyError,
+    hubPath,
+    companyId: routeCompanyId,
+  } = useCompanyFromRoute();
+  const [step, setStep] = useState(
+    routeCompanyId ? "selectType" : "selectCompany",
+  );
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!routeCompanyId);
   const [error, setError] = useState("");
   const [status, setStatus] = useState({ type: "", message: "" });
 
@@ -29,6 +40,16 @@ const Comparisons = () => {
   const [selectedGstr2bIdForPR, setSelectedGstr2bIdForPR] = useState("");
 
   useEffect(() => {
+    if (routeCompany) {
+      setSelectedCompany(routeCompany);
+      setStep((current) =>
+        current === "selectCompany" ? "selectType" : current,
+      );
+    }
+  }, [routeCompany]);
+
+  useEffect(() => {
+    if (routeCompanyId) return;
     const loadCompanies = async () => {
       try {
         const { data } = await fetchCompanyMasters();
@@ -42,7 +63,7 @@ const Comparisons = () => {
     };
 
     loadCompanies();
-  }, []);
+  }, [routeCompanyId]);
 
   useEffect(() => {
     if (status.message) {
@@ -84,6 +105,10 @@ const Comparisons = () => {
   };
 
   const handleBackToSelect = () => {
+    if (routeCompanyId) {
+      navigate(hubPath);
+      return;
+    }
     setSelectedCompany(null);
     setStep("selectCompany");
     setGstr2bImports([]);
@@ -224,9 +249,24 @@ const Comparisons = () => {
     }
   };
 
+  if (routeCompanyLoading) {
+    return <LoadingScreen message="Loading client…" />;
+  }
+
+  if (routeCompanyError && routeCompanyId) {
+    return (
+      <main className="flex min-h-[40vh] flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-lg text-rose-600">{routeCompanyError}</p>
+        <button type="button" onClick={() => navigate("/")} className="ie-btn-primary">
+          Back to clients
+        </button>
+      </main>
+    );
+  }
+
   if (loading && step === "selectCompany") {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-amber-800">
+      <main className="flex min-h-[40vh] items-center justify-center text-teal-700">
         Loading companies...
       </main>
     );
@@ -234,7 +274,7 @@ const Comparisons = () => {
 
   if (error && step === "selectCompany") {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-rose-600">
+      <main className="flex min-h-[40vh] items-center justify-center text-rose-600">
         {error}
       </main>
     );
@@ -242,21 +282,24 @@ const Comparisons = () => {
 
   return (
     <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+      className="space-y-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       <section className="mx-auto max-w-6xl space-y-5">
-        <BackButton label="Back to dashboard" />
+        <BackButton
+          label={routeCompanyId ? "Back to client" : "Back to dashboard"}
+          fallback={routeCompanyId ? hubPath : "/"}
+        />
 
         {step === "selectCompany" && (
           <>
             <motion.header
-              className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+              className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+              <p className="ie-eyebrow">
                 Step 1
               </p>
               <h1 className="text-3xl font-bold text-slate-900">
@@ -284,10 +327,10 @@ const Comparisons = () => {
                 <motion.button
                   key={company._id}
                   onClick={() => handleSelectCompany(company)}
-                  className="rounded-2xl border border-amber-100 bg-white/90 p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                  className="rounded-2xl ie-card p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
                   variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
                 >
-                  <div className="flex items-center gap-3 text-amber-600">
+                  <div className="flex items-center gap-3 text-teal-600">
                     <FiBriefcase />
                     <span className="text-sm font-semibold uppercase tracking-wide text-amber-500">
                       Company Name
@@ -318,13 +361,13 @@ const Comparisons = () => {
         {step === "selectType" && (
           <>
             <motion.header
-              className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+              className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+                  <p className="ie-eyebrow">
                     Step 2
                   </p>
                   <h1 className="text-3xl font-bold text-slate-900">
@@ -346,12 +389,12 @@ const Comparisons = () => {
             <div className="grid gap-6 sm:grid-cols-2">
               <motion.button
                 onClick={() => handleSelectType("gstr2a")}
-                className="rounded-2xl border border-amber-100 bg-white/90 p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                className="rounded-2xl ie-card p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
               >
-                <div className="flex items-center gap-3 text-amber-600 mb-3">
+                <div className="flex items-center gap-3 text-teal-600 mb-3">
                   <FiFileText className="w-6 h-6" />
                   <span className="text-lg font-semibold text-slate-900">
                     GSTR-2B ↔ GSTR-2A
@@ -360,19 +403,19 @@ const Comparisons = () => {
                 <p className="text-sm text-slate-600">
                   Compare GSTR-2B invoices against GSTR-2A and keep only invoices not appearing in GSTR-2A.
                 </p>
-                <div className="mt-4 flex items-center text-amber-600 text-sm font-semibold">
+                <div className="mt-4 flex items-center text-teal-600 text-sm font-semibold">
                   Select <FiArrowRight className="ml-1" />
                 </div>
               </motion.button>
 
               <motion.button
                 onClick={() => handleSelectType("purchaseReg")}
-                className="rounded-2xl border border-amber-100 bg-white/90 p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                className="rounded-2xl ie-card p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
               >
-                <div className="flex items-center gap-3 text-amber-600 mb-3">
+                <div className="flex items-center gap-3 text-teal-600 mb-3">
                   <FiFileText className="w-6 h-6" />
                   <span className="text-lg font-semibold text-slate-900">
                     GSTR-2B ↔ Purchase Register
@@ -381,7 +424,7 @@ const Comparisons = () => {
                 <p className="text-sm text-slate-600">
                   Compare GSTR-2B invoices with a Purchase Register Excel and highlight matches/mismatches.
                 </p>
-                <div className="mt-4 flex items-center text-amber-600 text-sm font-semibold">
+                <div className="mt-4 flex items-center text-teal-600 text-sm font-semibold">
                   Select <FiArrowRight className="ml-1" />
                 </div>
               </motion.button>
@@ -392,13 +435,13 @@ const Comparisons = () => {
         {step === "flowA" && (
           <>
             <motion.header
-              className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+              className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+                  <p className="ie-eyebrow">
                     GSTR-2B ↔ GSTR-2A Comparison
                   </p>
                   <h1 className="text-3xl font-bold text-slate-900">
@@ -430,14 +473,14 @@ const Comparisons = () => {
             )}
 
             <div className="space-y-6">
-              <div className="rounded-2xl border border-amber-100 bg-white/90 p-6 shadow-sm">
+              <div className="rounded-2xl ie-card p-6 shadow-sm">
                 <label className="block text-sm font-semibold text-slate-900 mb-2">
                   Select GSTR-2B File
                 </label>
                 <select
                   value={selectedGstr2bId}
                   onChange={(e) => setSelectedGstr2bId(e.target.value)}
-                  className="w-full rounded-lg border border-amber-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
                   disabled={loading || comparing}
                 >
                   <option value="">-- Select GSTR-2B file --</option>
@@ -454,14 +497,14 @@ const Comparisons = () => {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-amber-100 bg-white/90 p-6 shadow-sm">
+              <div className="rounded-2xl ie-card p-6 shadow-sm">
                 <label className="block text-sm font-semibold text-slate-900 mb-2">
                   Select GSTR-2A File
                 </label>
                 <select
                   value={selectedGstr2aId}
                   onChange={(e) => setSelectedGstr2aId(e.target.value)}
-                  className="w-full rounded-lg border border-amber-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
                   disabled={loading || comparing}
                 >
                   <option value="">-- Select GSTR-2A file --</option>
@@ -499,13 +542,13 @@ const Comparisons = () => {
         {step === "flowB" && (
           <>
             <motion.header
-              className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+              className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
               initial={{ y: 20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+                  <p className="ie-eyebrow">
                     GSTR-2B ↔ Purchase Register Comparison
                   </p>
                   <h1 className="text-3xl font-bold text-slate-900">
@@ -537,14 +580,14 @@ const Comparisons = () => {
             )}
 
             <div className="space-y-6">
-              <div className="rounded-2xl border border-amber-100 bg-white/90 p-6 shadow-sm">
+              <div className="rounded-2xl ie-card p-6 shadow-sm">
                 <label className="block text-sm font-semibold text-slate-900 mb-2">
                   Select GSTR-2B File
                 </label>
                 <select
                   value={selectedGstr2bIdForPR}
                   onChange={(e) => setSelectedGstr2bIdForPR(e.target.value)}
-                  className="w-full rounded-lg border border-amber-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
                   disabled={loading || comparing}
                 >
                   <option value="">-- Select GSTR-2B file --</option>
@@ -561,7 +604,7 @@ const Comparisons = () => {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-amber-100 bg-white/90 p-6 shadow-sm">
+              <div className="rounded-2xl ie-card p-6 shadow-sm">
                 <label className="block text-sm font-semibold text-slate-900 mb-2">
                   Upload Purchase Register Excel File
                 </label>
@@ -569,7 +612,7 @@ const Comparisons = () => {
                   type="file"
                   accept=".xlsx,.xls"
                   onChange={handlePurchaseRegFileChange}
-                  className="w-full rounded-lg border border-amber-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-slate-900 focus:border-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-200"
                   disabled={loading || comparing}
                 />
                 {purchaseRegFile && (

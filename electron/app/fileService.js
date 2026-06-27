@@ -110,6 +110,7 @@ export const readJson = async (
 export const writeJson = async (filename, data, { basePath } = {}) => {
   const fullPath = getFullPath(filename, basePath);
   await ensureDataDir(basePath);
+  await fs.mkdir(path.dirname(fullPath), { recursive: true });
   await fs.writeFile(fullPath, JSON.stringify(data, null, 2), "utf8");
   return true;
 };

@@ -1,6 +1,9 @@
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useCompanyFromRoute } from "../hooks/useCompanyFromRoute.js";
+import LoadingScreen from "../components/ui/LoadingScreen.jsx";
+import { companyHistoryGstr2APath } from "../utils/companyRoutes.js";
 import * as XLSX from "xlsx-js-style";
 import {
   FiAlertCircle,
@@ -280,8 +283,8 @@ function normalizeItcAvailabilityValue(value) {
 
 const CompanyProcessorGstr2A = () => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const company = location.state?.company;
+  const { company, loading: companyLoading, error: companyError, hubPath } =
+    useCompanyFromRoute();
   const { user, isPlanRestricted } = useAuth();
   const readOnly = !user?.isMaster && isPlanRestricted;
   const readOnlyMessage = readOnly
@@ -1678,7 +1681,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
 
   const tabOrder = ["processed", "reverseCharge", "mismatched", "disallow"];
   const tabActiveClasses = {
-    processed: "border-amber-500 text-amber-700",
+    processed: "border-amber-500 text-teal-700",
     reverseCharge: "border-purple-500 text-purple-700",
     mismatched: "border-orange-500 text-orange-700",
     disallow: "border-red-500 text-red-700",
@@ -2008,7 +2011,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
 
   useEffect(() => {
     if (!company) {
-      const timer = setTimeout(() => navigate("/company-selector"), 2000);
+      const timer = setTimeout(() => navigate(hubPath || "/"), 2000);
       return () => clearTimeout(timer);
     }
   }, [company, navigate]);
@@ -2624,17 +2627,22 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
       .finally(() => setProcessing(false));
   };
 
+  if (companyLoading) {
+    return <LoadingScreen message="Loading client…" />;
+  }
+
   if (!company) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-center p-6 space-y-3">
+      <main className="flex min-h-[40vh] flex-col items-center justify-center gap-3 p-6 text-center">
         <p className="text-lg text-slate-700">
-          No company selected. Redirecting you to selector...
+          {companyError || "No client selected."}
         </p>
         <button
-          onClick={() => navigate("/company-selector")}
-          className="px-4 py-2 rounded bg-indigo-600 text-white"
+          type="button"
+          onClick={() => navigate("/")}
+          className="ie-btn-primary"
         >
-          Go now
+          Back to clients
         </button>
       </main>
     );
@@ -2648,13 +2656,13 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
         animate={{ opacity: 1 }}
       >
         <section className="w-full px-6 space-y-6">
-          <BackButton label="Back to selector" fallback="/company-selector" />
+          <BackButton label="Back to client" fallback={hubPath} />
           <motion.header
-            className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur flex flex-col gap-2"
+            className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur flex flex-col gap-2"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+            <p className="ie-eyebrow">
               Step 2
             </p>
             <h1 className="text-3xl font-bold text-slate-900">
@@ -2667,7 +2675,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
             </div>
           </motion.header>
           <PlanRestrictionBanner />
-          <div className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4">
+          <div className="rounded-3xl ie-card p-6 shadow-lg backdrop-blur space-y-4">
             <h2 className="text-xl font-semibold text-slate-900">
               Processing is locked for this account
             </h2>
@@ -2680,8 +2688,12 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
             <div className="flex flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => navigate("/b2b-history")}
-                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
+                onClick={() =>
+                  navigate(companyHistoryGstr2APath(company._id), {
+                    state: { company },
+                  })
+                }
+                className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700"
               >
                 Go to Review History
               </button>
@@ -2706,14 +2718,14 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
       animate={{ opacity: 1 }}
     >
       <section className="w-full px-6 space-y-6">
-        <BackButton label="Back to selector" fallback="/company-selector" />
+        <BackButton label="Back to client" fallback={hubPath} />
 
         <motion.header
-          className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur flex flex-col gap-2"
+          className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur flex flex-col gap-2"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+          <p className="ie-eyebrow">
             Step 2
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
@@ -2749,7 +2761,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
         ) : null}
 
         <motion.section
-          className="rounded-3xl border border-dashed border-amber-200 bg-white/90 p-6 shadow-lg backdrop-blur space-y-3"
+          className="rounded-3xl border border-dashed border-slate-200 bg-white/90 p-6 shadow-lg backdrop-blur space-y-3"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
@@ -2766,7 +2778,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
             <li>Use one file per month / return period</li>
             <li>If you picked the wrong file, simply upload again to replace it</li>
           </ul>
-          <label className="mt-4 flex h-36 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/50 text-amber-700 transition hover:bg-amber-50">
+          <label className="mt-4 flex h-36 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-amber-50/50 text-teal-700 transition hover:bg-teal-50">
             <input
               type="file"
               accept=".csv"
@@ -2785,12 +2797,12 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
 
         {sheetRows.length ? (
           <motion.section
-            className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
+            className="rounded-3xl ie-card p-6 shadow-lg backdrop-blur flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+              <p className="ie-eyebrow">
                 Step 3
               </p>
               <h3 className="text-xl font-semibold text-slate-900">
@@ -2803,7 +2815,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
             </div>
             <button
               onClick={handleGenerate}
-              className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-5 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
+              className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-5 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700"
             >
               <FiPlayCircle />
               Generate working sheet
@@ -2813,13 +2825,13 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
 
         {generatedRows.length ? (
           <motion.section
-            className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
+            className="rounded-3xl ie-card p-6 shadow-lg backdrop-blur space-y-4"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
             <div className="space-y-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+                <p className="ie-eyebrow">
                   Step C – Map ledgers & actions, then download
                 </p>
                 <p className="text-sm text-slate-600 mt-1">
@@ -2862,7 +2874,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
               <button
                 onClick={handleDownloadMismatchedExcel}
                 disabled={!downloadsUnlocked}
-                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FiDownload />
                 Mismatched Excel
@@ -2902,14 +2914,14 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
               <button
                 onClick={handleProcessSheet}
                 disabled={processing}
-                className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                className="ie-btn-ghost disabled:opacity-60"
               >
                 <FiPlayCircle />
                 {processing ? "Processing..." : "Process Sheet"}
               </button>
             </div>
 
-            <div className="rounded-2xl border border-amber-100 bg-amber-50/60 px-4 py-3 text-sm text-amber-800 flex flex-col gap-2">
+            <div className="rounded-2xl border border-slate-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-800 flex flex-col gap-2">
               <span className="inline-flex items-center gap-2 font-semibold">
                 <FiAlertCircle />
                 Unlock downloads in two steps
@@ -2939,21 +2951,21 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
 
         {(hasProcessedRows || hasReverseChargeRows || hasMismatchedRows || hasDisallowRows) ? (
           <motion.section
-            className="rounded-3xl border border-amber-100 bg-white/95 p-6 shadow-lg backdrop-blur space-y-4"
+            className="rounded-3xl ie-card p-6 shadow-lg backdrop-blur space-y-4"
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
           >
             {missingSuppliers.length > 0 ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-amber-50/50 p-4 space-y-3">
                 <div className="flex items-start gap-2">
-                  <FiAlertCircle className="text-amber-600 mt-0.5 shrink-0" size={18} />
+                  <FiAlertCircle className="text-teal-600 mt-0.5 shrink-0" size={18} />
                   <div className="flex-1 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <h4 className="text-sm font-semibold text-amber-900 mb-1">
                           Missing from Party Master
                         </h4>
-                        <p className="text-xs text-amber-700">
+                        <p className="text-xs text-teal-700">
                           The following suppliers with their GSTIN numbers are not present in the party master for this company:
                         </p>
                       </div>
@@ -2974,7 +2986,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                         return (
                           <div
                             key={`${key}-${idx}`}
-                            className="flex items-center gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs"
+                            className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
                           >
                             <input
                               type="checkbox"
@@ -2993,7 +3005,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       })}
                     </div>
 
-                    <div className="flex flex-col gap-2 text-xs text-amber-700">
+                    <div className="flex flex-col gap-2 text-xs text-teal-700">
                       <p className="font-semibold">
                         Please download the Excel before saving to Party Master if you need a copy. After saving, this list will no longer be downloadable.
                       </p>
@@ -3023,14 +3035,14 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
               </div>
             ) : null}
             {/* Tabs */}
-            <div className="flex flex-wrap gap-2 border-b border-amber-200">
+            <div className="flex flex-wrap gap-2 border-b border-slate-200">
               {tabOrder.map((key) => {
                 const config = tabConfigs[key];
                 if (!config) return null;
                 const isActive = activeTab === key;
                 const activeClass =
                   tabActiveClasses[key] ||
-                  "border-amber-500 text-amber-700";
+                  "border-amber-500 text-teal-700";
                 return (
                   <button
                     key={key}
@@ -3064,7 +3076,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                   type="button"
                   onClick={loadLedgerNames}
                   disabled={ledgerNamesLoading}
-                  className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="ie-btn-ghost disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <FiRefreshCw
                     className={ledgerNamesLoading ? "animate-spin" : ""}
@@ -3074,7 +3086,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                 <button
                   type="button"
                   onClick={openAddLedgerModal}
-                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
+                  className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700"
                 >
                   <FiPlus />
                   New ledger name
@@ -3108,7 +3120,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                 No saved ledger names yet. Add one to reuse it in every row.
               </p>
             ) : null}
-            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh] shadow-inner">
+            <div className="rounded-2xl border border-slate-200 overflow-auto max-h-[60vh] shadow-inner">
               <table className="min-w-full text-xs text-slate-700">
                 <thead className="sticky top-0 bg-white">
                   <tr>
@@ -3120,8 +3132,8 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       return (
                         <th
                           key={column}
-                          className={`px-2 py-2 text-left font-semibold border-b border-amber-100 ${
-                            column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
+                          className={`px-2 py-2 text-left font-semibold border-b border-slate-200 ${
+                            column === 'Ledger Name' ? 'pr-4 border-r-2 border-slate-200' : ''
                           }`}
                         >
                           {column}
@@ -3136,7 +3148,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                             ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)
                           ).length + 2 // apply-below columns for ledger & action
                         }
-                        className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
+                        className="px-2 py-2 text-left font-semibold border-b border-slate-200 bg-amber-50"
                       >
                         Ledger Actions
                       </th>
@@ -3151,34 +3163,34 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       return <th key={`sub-${column}`} className="invisible"></th>;
                     })}
                     {/* Add sub-headers for the grouped fields */}
-                    <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                    <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-slate-200">
                       Apply Below
                     </th>
                     {activeColumns.includes('ITC Availability') && (
-                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-slate-200">
                         ITC Availability
                       </th>
                     )}
                     {activeColumns.includes('Accept Credit') && (
-                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-slate-200">
                         Accept Credit
                       </th>
                     )}
                     {activeColumns.includes('Action') && (
-                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-slate-200">
                         Action
                       </th>
                     )}
-                    <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                    <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-slate-200">
                       Apply Below
                     </th>
                     {activeColumns.includes('Action Reason') && (
-                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-slate-200">
                         Reason
                       </th>
                     )}
                     {activeColumns.includes('Narration') && (
-                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-amber-100">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-500 border-b border-slate-200">
                         Narration
                       </th>
                     )}
@@ -3203,7 +3215,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                     return (
                       <tr
                         key={rowKey}
-                        className="hover:bg-amber-50/30 transition-colors"
+                        className="hover:bg-teal-50/30 transition-colors"
                       >
                         {columns.map((column) => {
                           const cellKey = `${rowKey}-${column}`;
@@ -3217,7 +3229,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                             <td
                               key={cellKey}
                               className={`px-2 py-2 align-top text-[11px] ${
-                                column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
+                                column === 'Ledger Name' ? 'pr-4 border-r-2 border-slate-200' : ''
                               }`}
                             >
                               {column === "Supplier Name" || column === "supplierName" ? (
@@ -3243,7 +3255,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                                           event.target.value
                                         )
                                       }
-                                      className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                       placeholder="Supplier name"
                                     />
                                   );
@@ -3343,7 +3355,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                                             event.target.value
                                           )
                                         }
-                                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                       >
                                         <option value="">Select</option>
                                         <option value="Yes">Yes</option>
@@ -3371,7 +3383,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                                               event.target.value
                                             )
                                           }
-                                          className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                          className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                         >
                                           <option value="">Credit?</option>
                                           <option value="Yes">Yes</option>
@@ -3411,7 +3423,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                                             event.target.value
                                           )
                                         }
-                                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                       >
                                         <option value="">Action</option>
                                         {ACTION_OPTIONS.map((option) => (
@@ -3501,7 +3513,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                                               )
                                             }
                                             placeholder="Reason..."
-                                            className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                            className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                           />
                                         );
                                       })()}
@@ -3529,7 +3541,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                                           )
                                         }
                                         placeholder="Narration..."
-                                        className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                       />
                                     </div>
                                   )}
@@ -3558,13 +3570,13 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
           <button
             type="button"
             onClick={saveManualRows}
-            className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-teal-700 disabled:opacity-60"
             disabled={processing}
           >
             Save Manual Rows
           </button>
         </div>
-        <div className="overflow-auto rounded-xl border border-amber-100">
+        <div className="overflow-auto rounded-xl border border-slate-200">
           <table className="min-w-[1600px] text-xs text-slate-700 table-fixed mb-20">
             <thead className="bg-amber-50">
               <tr>
@@ -3590,7 +3602,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
             </thead>
             <tbody className="divide-y divide-amber-50">
               {manualRows.map((row) => (
-                <tr key={row.id} className="hover:bg-amber-50/40">
+                <tr key={row.id} className="hover:bg-teal-50/40">
                   <td className="px-2 py-2">
                     <input
                       type="text"
@@ -3598,7 +3610,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "date", e.target.value)
                       }
-                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                      className="w-28 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3608,7 +3620,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "vchNo", e.target.value)
                       }
-                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                      className="w-24 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3621,7 +3633,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                           : handleManualRowChange(row.id, "supplierName", e.target.value)
                       }
                       readOnly={row._supplierNameAutoFilled}
-                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                      className="w-40 rounded border border-slate-200 px-2 py-1"
                       placeholder={row._supplierNameAutoFilled ? "Auto-filled" : "Supplier Name"}
                     />
                   </td>
@@ -3632,7 +3644,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "gstin", e.target.value)
                       }
-                      className="w-32 rounded border border-amber-200 px-2 py-1"
+                      className="w-32 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3642,7 +3654,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "state", e.target.value)
                       }
-                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                      className="w-28 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2 text-slate-500">
@@ -3655,7 +3667,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "taxableValue", e.target.value)
                       }
-                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                      className="w-24 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3665,7 +3677,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "ratePercent", e.target.value)
                       }
-                      className="w-16 rounded border border-amber-200 px-2 py-1"
+                      className="w-16 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3675,7 +3687,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "igst", e.target.value)
                       }
-                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                      className="w-20 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3685,7 +3697,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "cgst", e.target.value)
                       }
-                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                      className="w-20 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3695,7 +3707,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "sgst", e.target.value)
                       }
-                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                      className="w-20 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3705,7 +3717,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "cess", e.target.value)
                       }
-                      className="w-20 rounded border border-amber-200 px-2 py-1"
+                      className="w-20 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3714,7 +3726,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "reverseCharge", e.target.value)
                       }
-                      className="w-24 rounded border border-amber-200 px-2 py-1"
+                      className="w-24 rounded border border-slate-200 px-2 py-1"
                     >
                       <option value="">Select</option>
                       <option value="Yes">Yes</option>
@@ -3727,7 +3739,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "itcAvailability", e.target.value)
                       }
-                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                      className="w-28 rounded border border-slate-200 px-2 py-1"
                     >
                       <option value="">Select</option>
                       <option value="Yes">Yes</option>
@@ -3771,7 +3783,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "action", e.target.value)
                       }
-                      className="w-28 rounded border border-amber-200 px-2 py-1"
+                      className="w-28 rounded border border-slate-200 px-2 py-1"
                     >
                       <option value="">Action</option>
                       {ACTION_OPTIONS.map((opt) => (
@@ -3789,7 +3801,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "actionReason", e.target.value)
                       }
-                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                      className="w-40 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                   <td className="px-2 py-2">
@@ -3799,7 +3811,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                       onChange={(e) =>
                         handleManualRowChange(row.id, "narration", e.target.value)
                       }
-                      className="w-40 rounded border border-amber-200 px-2 py-1"
+                      className="w-40 rounded border border-slate-200 px-2 py-1"
                     />
                   </td>
                 </tr>
@@ -3829,7 +3841,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                     value: event.target.value,
                   }))
                 }
-                className="w-full rounded-2xl border border-amber-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
+                className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
                 placeholder="Enter ledger name"
                 autoFocus
                 disabled={addLedgerModal.submitting}
@@ -3846,7 +3858,7 @@ const isSupplierDirtyForRow = (rowKey, rowMap, drafts) => {
                 <button
                   type="submit"
                   disabled={addLedgerModal.submitting}
-                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700 disabled:opacity-60"
                 >
                   {addLedgerModal.submitting ? "Adding..." : "Add ledger"}
                 </button>

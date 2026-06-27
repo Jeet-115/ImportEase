@@ -23,6 +23,7 @@ import PlanRestrictionBanner from "../components/PlanRestrictionBanner.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { getPlanRestrictionMessage } from "../utils/planAccess.js";
 import { fetchCompanyMasterById } from "../services/companymasterservices";
+import { companyHubPath } from "../utils/companyRoutes";
 import {
   fetchImportById,
   fetchImportsByCompany,
@@ -624,7 +625,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
       key: "processed",
       label: `Processed Rows (${ledgerModalProcessedRows.length})`,
       enabled: ledgerModalProcessedRows.length > 0,
-      activeClass: "border-amber-500 text-amber-700",
+      activeClass: "border-amber-500 text-teal-700",
     },
     {
       key: "reverseCharge",
@@ -1660,7 +1661,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-white text-amber-800">
+      <main className="flex min-h-[40vh] items-center justify-center text-teal-700">
         Loading history...
       </main>
     );
@@ -1668,7 +1669,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
 
   return (
     <motion.main
-      className="min-h-screen bg-gradient-to-br from-amber-50 via-rose-50 to-white p-4 sm:p-6"
+      className="space-y-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
@@ -1691,14 +1692,17 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
           </div>
         ) : null}
 
-        <BackButton label="Back to history" fallback="/b2b-history" />
+        <BackButton
+          label="Back to client"
+          fallback={companyId ? companyHubPath(companyId) : "/"}
+        />
 
         <motion.header
-          className="rounded-3xl border border-amber-100 bg-white/90 p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
+          className="rounded-3xl ie-card p-6 sm:p-8 shadow-lg backdrop-blur space-y-3"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-500">
+          <p className="ie-eyebrow">
             ImportEase – client history
           </p>
           <h1 className="text-3xl font-bold text-slate-900">
@@ -1711,7 +1715,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
             </p>
             <p>GSTIN: {company?.gstin || "—"}</p>
           </div>
-          <div className="flex flex-wrap gap-3 text-xs text-amber-700">
+          <div className="flex flex-wrap gap-3 text-xs text-teal-700">
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1">
               <FiInfo /> Use this page when you need to re-download Excel or
               correct ledgers for a past month.
@@ -1726,7 +1730,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
         <PlanRestrictionBanner />
 
         <motion.section
-          className="rounded-3xl border border-amber-100 bg-white/95 p-4 sm:p-6 shadow-lg backdrop-blur space-y-4"
+          className="rounded-3xl ie-card p-4 sm:p-6 shadow-lg backdrop-blur space-y-4"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
         >
@@ -1763,13 +1767,13 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                           {/* 1. GSTR-2B download & view */}
                           <button
                             onClick={() => downloadRawExcel(imp._id)}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                           >
                             <FiDownload /> GSTR2A Excel
                           </button>
                           <button
                             onClick={() => openRawPreview(imp._id)}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                           >
                             <FiEye /> View GSTR2A
                           </button>
@@ -1801,13 +1805,13 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                           {/* 4. Processed download & view */}
                           <button
                             onClick={() => downloadProcessedExcel(imp._id, false)}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                           >
                             <FiDownload /> TallyProcessedExcel
                           </button>
                           <button
                             onClick={() => openProcessedPreview(imp._id, false)}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                           >
                             <FiEye /> View Processed
                           </button>
@@ -1815,13 +1819,13 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                           {/* 5. Mismatched download & view */}
                           <button
                             onClick={() => downloadProcessedExcel(imp._id, true)}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                           >
                             <FiDownload /> Mismatched Excel
                           </button>
                           <button
                             onClick={() => openProcessedPreview(imp._id, true)}
-                            className="inline-flex items-center gap-1 rounded-full border border-amber-200 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                           >
                             <FiEye /> View Mismatched
                           </button>
@@ -2029,7 +2033,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
             ) : null}
             
             {/* Tabs */}
-            <div className="flex flex-wrap gap-2 border-b border-amber-200">
+            <div className="flex flex-wrap gap-2 border-b border-slate-200">
               {ledgerModalTabConfigs.map(({ key, label, enabled, activeClass }) => (
                 <button
                   key={key}
@@ -2054,7 +2058,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                 type="button"
                 onClick={loadLedgerNames}
                 disabled={ledgerNamesLoading}
-                className="inline-flex items-center gap-2 rounded-full border border-amber-200 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="ie-btn-ghost disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <FiRefreshCw className={ledgerNamesLoading ? "animate-spin" : ""} />
                 {ledgerNamesLoading ? "Refreshing..." : "Refresh names"}
@@ -2062,7 +2066,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
               <button
                 type="button"
                 onClick={openAddLedgerModal}
-                className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600"
+                className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700"
               >
                 <FiPlus />
                 New ledger name
@@ -2094,7 +2098,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                 )}
               </button>
             </div>
-            <div className="rounded-2xl border border-amber-100 overflow-auto max-h-[60vh] shadow-inner">
+            <div className="rounded-2xl border border-slate-200 overflow-auto max-h-[60vh] shadow-inner">
               {hasLedgerModalRows ? (
                 <table className="w-full text-xs text-slate-700">
                   <thead className="sticky top-0 bg-white">
@@ -2107,8 +2111,8 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                         return (
                           <th
                             key={column}
-                            className={`px-1 py-1.5 text-left text-xs font-medium border-b border-amber-100 ${
-                              column === 'Ledger Name' ? 'pr-4 border-r-2 border-amber-200' : ''
+                            className={`px-1 py-1.5 text-left text-xs font-medium border-b border-slate-200 ${
+                              column === 'Ledger Name' ? 'pr-4 border-r-2 border-slate-200' : ''
                             }`}
                           >
                             {column}
@@ -2123,7 +2127,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                               ['Accept Credit', 'Action', 'Action Reason', 'Narration', 'ITC Availability'].includes(col)
                             ).length + 2 // apply-below columns for ledger & action
                           }
-                          className="px-2 py-2 text-left font-semibold border-b border-amber-100 bg-amber-50"
+                          className="px-2 py-2 text-left font-semibold border-b border-slate-200 bg-amber-50"
                         >
                           Ledger Actions
                         </th>
@@ -2138,34 +2142,34 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                         return <th key={`sub-${column}`} className="invisible"></th>;
                       })}
                       {/* Add sub-headers for the grouped fields */}
-                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-slate-200">
                         Apply Below
                       </th>
                       {ledgerModalColumns.includes('ITC Availability') && (
-                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-slate-200">
                           ITC Availability
                         </th>
                       )}
                       {ledgerModalColumns.includes('Accept Credit') && (
-                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-slate-200">
                           Accept Credit
                         </th>
                       )}
                       {ledgerModalColumns.includes('Action') && (
-                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-slate-200">
                           Action
                         </th>
                       )}
-                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                      <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-slate-200">
                         Apply Below
                       </th>
                       {ledgerModalColumns.includes('Action Reason') && (
-                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-slate-200">
                           Reason
                         </th>
                       )}
                       {ledgerModalColumns.includes('Narration') && (
-                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-amber-100">
+                        <th className="px-1 py-1 text-left text-xs font-normal text-slate-500 border-b border-slate-200">
                           Narration
                         </th>
                       )}
@@ -2196,7 +2200,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                       return (
                         <tr
                           key={rowKey}
-                          className="hover:bg-amber-50/30 transition-colors"
+                          className="hover:bg-teal-50/30 transition-colors"
                         >
                           {ledgerModalColumns.map((column) => {
                             const cellKey = `${rowKey}-${column}`;
@@ -2208,7 +2212,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                               <td 
                                 key={cellKey} 
                                 className={`px-1 py-1 align-middle ${
-                                  column === 'Ledger Name' ? 'pr-1 border-r-2 border-amber-200' : ''
+                                  column === 'Ledger Name' ? 'pr-1 border-r-2 border-slate-200' : ''
                                 }`}
                               >
                                 {column === "Supplier Name" || column === "supplierName" ? (
@@ -2233,7 +2237,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                                             event.target.value
                                           )
                                         }
-                                        className="w-full rounded border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                         placeholder="Supplier name"
                                       />
                                     );
@@ -2425,7 +2429,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                                             event.target.value
                                           )
                                         }
-                                        className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                        className="w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                       >
                                         <option value="">Select</option>
                                         <option value="Yes">Yes</option>
@@ -2457,7 +2461,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                                                 event.target.value
                                               )
                                             }
-                                            className="w-full rounded border border-amber-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                            className="w-full rounded border border-slate-200 bg-white px-1 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                           >
                                             <option value="">Credit?</option>
                                             <option value="Yes">Yes</option>
@@ -2489,7 +2493,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                                               event.target.value
                                             )
                                           }
-                                          className="w-full rounded-lg border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                          className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                         >
                                           <option value="">Action</option>
                                           {ACTION_OPTIONS.map((option) => (
@@ -2696,7 +2700,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                                                 )
                                               }
                                               placeholder="Reason..."
-                                              className="w-full rounded border border-amber-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                              className="w-full rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                             />
                                           );
                                         })()}
@@ -2723,7 +2727,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                                             )
                                           }
                                           placeholder="Narration..."
-                                          className="w-full rounded border border-amber-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
+                                          className="w-full rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-1 focus:ring-amber-300"
                                         />
                                       </div>
                                     )}
@@ -2755,7 +2759,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                 <button
                   type="button"
                   onClick={saveManualRows}
-                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-3 py-1.5 text-white text-xs font-semibold shadow hover:bg-teal-700 disabled:opacity-60"
                   disabled={savingManualRows}
                 >
                   {savingManualRows ? (
@@ -2767,7 +2771,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                   )}
                 </button>
               </div>
-              <div className="overflow-auto rounded-xl border border-amber-100">
+              <div className="overflow-auto rounded-xl border border-slate-200">
                 <table className="min-w-full text-xs text-slate-700 mb-20">
                   <thead className="bg-amber-50">
                     <tr>
@@ -2793,7 +2797,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                   </thead>
                   <tbody className="divide-y divide-amber-50">
                     {manualRows.map((row) => (
-                      <tr key={row.id} className="hover:bg-amber-50/40">
+                      <tr key={row.id} className="hover:bg-teal-50/40">
                         <td className="px-2 py-2">
                           <input
                             type="text"
@@ -2801,7 +2805,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "date", e.target.value)
                             }
-                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                            className="w-28 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2811,7 +2815,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "vchNo", e.target.value)
                             }
-                            className="w-24 rounded border border-amber-200 px-2 py-1"
+                            className="w-24 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2824,7 +2828,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                                 : handleManualRowChange(row.id, "supplierName", e.target.value)
                             }
                             readOnly={row._supplierNameAutoFilled}
-                            className="w-40 rounded border border-amber-200 px-2 py-1"
+                            className="w-40 rounded border border-slate-200 px-2 py-1"
                             placeholder={row._supplierNameAutoFilled ? "Auto-filled" : "Supplier Name"}
                           />
                         </td>
@@ -2835,7 +2839,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "gstin", e.target.value)
                             }
-                            className="w-32 rounded border border-amber-200 px-2 py-1"
+                            className="w-32 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2845,7 +2849,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "state", e.target.value)
                             }
-                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                            className="w-28 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2 text-slate-500">
@@ -2858,7 +2862,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "taxableValue", e.target.value)
                             }
-                            className="w-24 rounded border border-amber-200 px-2 py-1"
+                            className="w-24 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2868,7 +2872,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "ratePercent", e.target.value)
                             }
-                            className="w-16 rounded border border-amber-200 px-2 py-1"
+                            className="w-16 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2878,7 +2882,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "igst", e.target.value)
                             }
-                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                            className="w-20 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2888,7 +2892,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "cgst", e.target.value)
                             }
-                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                            className="w-20 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2898,7 +2902,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "sgst", e.target.value)
                             }
-                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                            className="w-20 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2908,7 +2912,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "cess", e.target.value)
                             }
-                            className="w-20 rounded border border-amber-200 px-2 py-1"
+                            className="w-20 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -2917,7 +2921,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "reverseCharge", e.target.value)
                             }
-                            className="w-24 rounded border border-amber-200 px-2 py-1"
+                            className="w-24 rounded border border-slate-200 px-2 py-1"
                           >
                             <option value="">Select</option>
                             <option value="Yes">Yes</option>
@@ -2930,7 +2934,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "itcAvailability", e.target.value)
                             }
-                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                            className="w-28 rounded border border-slate-200 px-2 py-1"
                           >
                             <option value="">Select</option>
                             <option value="Yes">Yes</option>
@@ -2973,7 +2977,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "action", e.target.value)
                             }
-                            className="w-28 rounded border border-amber-200 px-2 py-1"
+                            className="w-28 rounded border border-slate-200 px-2 py-1"
                           >
                             <option value="">Action</option>
                             {ACTION_OPTIONS.map((opt) => (
@@ -2990,7 +2994,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "actionReason", e.target.value)
                             }
-                            className="w-40 rounded border border-amber-200 px-2 py-1"
+                            className="w-40 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                         <td className="px-2 py-2">
@@ -3000,7 +3004,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                             onChange={(e) =>
                               handleManualRowChange(row.id, "narration", e.target.value)
                             }
-                            className="w-40 rounded border border-amber-200 px-2 py-1"
+                            className="w-40 rounded border border-slate-200 px-2 py-1"
                           />
                         </td>
                       </tr>
@@ -3034,7 +3038,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                     value: event.target.value,
                   }))
                 }
-                className="w-full rounded-2xl border border-amber-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
+                className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200"
                 placeholder="Enter ledger name"
                 autoFocus
                 disabled={addLedgerModal.submitting}
@@ -3051,7 +3055,7 @@ const [modalSupplierNameDrafts, setModalSupplierNameDrafts] = useState({});
                 <button
                   type="submit"
                   disabled={addLedgerModal.submitting}
-                  className="inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-amber-600 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-4 py-2 text-white text-sm font-semibold shadow hover:bg-teal-700 disabled:opacity-60"
                 >
                   {addLedgerModal.submitting ? "Adding..." : "Add ledger"}
                 </button>
