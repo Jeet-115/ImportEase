@@ -15,15 +15,14 @@ import carryForwardRoutes from "./routes/carryforwardroutes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
-import { connectDB } from "./config/db.js";
+import { connectDB, isPackagedApp } from "./config/db.js";
 import { initUserStore } from "./models/userStore.js";
 import { softwareAuthGuard } from "./middleware/softwareAuthMiddleware.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isProduction =
-  process.env.NODE_ENV === "production" || process.env.ELECTRON_IS_PACKAGED === "1";
+const isProduction = isPackagedApp();
 
 dotenv.config({
   path: path.join(__dirname, isProduction ? ".env.production" : ".env.development"),

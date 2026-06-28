@@ -5,15 +5,42 @@ let isConnected = false;
 /** @type {"mongo" | "local"} */
 export let authMode = "mongo";
 
+export const isPackagedApp = () =>
+  process.env.ELECTRON_IS_PACKAGED === "1" ||
+  process.env.ELECTRON_IS_PACKAGED === "true" ||
+  process.env.NODE_ENV === "production";
+
+const isLocalAuthAllowed = () => {
+  if (isPackagedApp()) {
+    return false;
+  }
+  return (
+    process.env.ALLOW_LOCAL_AUTH === "true" ||
+    process.env.ALLOW_LOCAL_AUTH === "1"
+  );
+};
+
+const resolveMongoUri = () => {
+  const fromEnv = process.env.MONGO_URI?.trim();
+  if (fromEnv) return fromEnv;
+
+  // Packaged builds must always reach the production user database.
+  // Historically this URI lived in source; keep as fallback when .env.production
+  // is not present on the build machine.
+  if (isPackagedApp()) {
+    return "mongodb+srv://exe_client:V6KX2K4LwjmhPQ1V@importease.o6i5bq8.mongodb.net/?appName=importease";
+  }
+
+  return "";
+};
+
 export const connectDB = async () => {
   if (isConnected) {
     return authMode;
   }
 
-  const uri = process.env.MONGO_URI?.trim();
-  const allowLocal =
-    process.env.ALLOW_LOCAL_AUTH === "true" ||
-    process.env.ALLOW_LOCAL_AUTH === "1";
+  const uri = resolveMongoUri();
+  const allowLocal = isLocalAuthAllowed();
 
   if (!uri) {
     if (allowLocal) {

@@ -473,6 +473,9 @@ const startBackend = async () => {
     if (app.isPackaged) {
       console.log("[backend] Starting from app.asar via import");
 
+      process.env.NODE_ENV = "production";
+      process.env.ELECTRON_IS_PACKAGED = "1";
+
       const backendModule = await import("./backend/server.js");
 
       if (backendModule?.default) {
