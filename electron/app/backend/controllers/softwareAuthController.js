@@ -1,9 +1,6 @@
 import bcrypt from "bcryptjs";
-import {
-  findUserByEmail,
-  saveUser,
-} from "../models/userStore.js";
-import { generateSoftwareToken } from "../models/localUserStore.js";
+import crypto from "node:crypto";
+import { User } from "../models/User.js";
 import { determinePlanStatus } from "../utils/subscriptionStatus.js";
 
 const getMasterEmails = () =>
@@ -11,6 +8,9 @@ const getMasterEmails = () =>
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
+
+const generateSoftwareToken = () =>
+  `SW-${crypto.randomBytes(24).toString("hex")}`;
 
 export const loginSoftware = async (req, res) => {
   try {
@@ -23,7 +23,7 @@ export const loginSoftware = async (req, res) => {
       });
     }
 
-    const user = await findUserByEmail(email);
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -57,7 +57,8 @@ export const loginSoftware = async (req, res) => {
       } else if (deviceId && user.deviceId !== deviceId) {
         return res.status(403).json({
           success: false,
-          message: "This account is already connected with another system. You can't login on 2 systems with the same account.",
+          message:
+            "This account is already connected with another system. You can't login on 2 systems with the same account.",
           errorCode: "DEVICE_MISMATCH",
         });
       }
@@ -72,7 +73,7 @@ export const loginSoftware = async (req, res) => {
       user.softwareToken = generateSoftwareToken();
     }
 
-    await saveUser(user);
+    await user.save();
 
     const planStatus = determinePlanStatus({
       isMaster,
@@ -98,5 +99,3 @@ export const loginSoftware = async (req, res) => {
     });
   }
 };
-
-

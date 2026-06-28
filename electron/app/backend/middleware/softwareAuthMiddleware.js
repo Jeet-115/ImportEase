@@ -1,4 +1,4 @@
-import { findUserBySoftwareToken } from "../models/userStore.js";
+import { User } from "../models/User.js";
 import {
   determinePlanStatus,
   getPlanRestrictionMessage,
@@ -23,7 +23,7 @@ export const softwareAuthGuard = async (req, res, next) => {
       });
     }
 
-    const user = await findUserBySoftwareToken(token);
+    const user = await User.findOne({ softwareToken: token });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -35,7 +35,7 @@ export const softwareAuthGuard = async (req, res, next) => {
     const isMaster =
       user.isMaster || masterEmails.includes(user.email.toLowerCase());
 
-    let planStatus = determinePlanStatus({
+    const planStatus = determinePlanStatus({
       isMaster,
       subscriptionActive: user.subscriptionActive,
       subscriptionExpiry: user.subscriptionExpiry,
@@ -58,7 +58,7 @@ export const softwareAuthGuard = async (req, res, next) => {
     }
 
     req.softwareUser = {
-      id: String(user._id),
+      id: user._id.toString(),
       email: user.email,
       isMaster,
       planStatus,
@@ -95,5 +95,3 @@ export const requireActiveSubscription = (req, res, next) => {
     planStatus: planStatus || "inactive",
   });
 };
-
-

@@ -15,21 +15,14 @@ import carryForwardRoutes from "./routes/carryforwardroutes.js";
 import { initFileStore } from "./storage/fileStore.js";
 import { ensureGSTINSeeded } from "./controllers/gstinnumbercontroller.js";
 import { ensureLedgerNamesSeeded } from "./controllers/ledgernamecontroller.js";
-import { connectDB, isPackagedApp } from "./config/db.js";
-import { initUserStore } from "./models/userStore.js";
+import { connectDB } from "./config/db.js";
 import { softwareAuthGuard } from "./middleware/softwareAuthMiddleware.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isProduction = isPackagedApp();
-
 dotenv.config({
-  path: path.join(__dirname, isProduction ? ".env.production" : ".env.development"),
-});
-dotenv.config({
-  path: path.join(__dirname, ".env"),
-  override: true,
+  path: path.join(__dirname, ".env.production"),
 });
 const app = express();
 
@@ -83,7 +76,6 @@ app.get("/", (req, res) => {
 
 const bootstrap = async () => {
   await connectDB();
-  await initUserStore();
   await initFileStore();
   await ensureGSTINSeeded();
   await ensureLedgerNamesSeeded();
