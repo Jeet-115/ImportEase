@@ -9,6 +9,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LoadingScreen from "../components/ui/LoadingScreen.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import { fetchCompanyMasters } from "../services/companymasterservices";
 import { companyHubPath } from "../utils/companyRoutes";
 
@@ -24,16 +25,41 @@ const item = {
 
 const Home = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!user?.softwareToken) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+
     fetchCompanyMasters()
-      .then(({ data }) => setCompanies(data || []))
-      .catch(() => setError("Unable to load clients. Please try again."))
-      .finally(() => setLoading(false));
-  }, []);
+      .then(({ data }) => {
+        if (!cancelled) {
+          setCompanies(data || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setError("Unable to load clients. Please try again.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.softwareToken]);
 
   if (loading) {
     return <LoadingScreen message="Loading your clients…" />;

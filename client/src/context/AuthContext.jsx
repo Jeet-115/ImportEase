@@ -123,8 +123,8 @@ export const AuthProvider = ({ children }) => {
         ...planState,
       };
 
-      setUser(authPayload);
       await setAuthData(authPayload);
+      setUser(authPayload);
     } catch (error) {
       // Re-throw the error so LoginScreen can handle it
       throw error;
